@@ -317,25 +317,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                     {rec?.entry && (
                       <div className="pc-levels">
                         <div className="pc-level">
-                          <span className="pc-lk">進場</span>
+                          <span className="pc-lk">進場參考</span>
                           <span className="pc-lv" style={{ color:'var(--text-1)' }}>{rec.entry}</span>
                         </div>
-                        <div className="pc-level">
-                          <span className="pc-lk">停損</span>
-                          <span className="pc-lv" style={{ color:'var(--up)' }}>{rec.stop}</span>
-                        </div>
-                        <div className="pc-level">
-                          <span className="pc-lk">目標</span>
-                          <span className="pc-lv" style={{ color:'var(--down)' }}>{rec.target}</span>
-                        </div>
-                        {rec.rr && (
-                          <div className="pc-level">
-                            <span className="pc-lk">RR</span>
-                            <span className="pc-lv" style={{ color: rec.rr >= 2 ? 'var(--down)' : 'var(--warn)' }}>
-                              1:{rec.rr}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     )}
 
@@ -369,7 +353,6 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                 <SortTh k="passed"    label="條件" />
                 <SortTh k="vcp"       label="VCP分" />
                 <th>樞紐/買點</th>
-                <th>停損</th>
                 <th>PP</th>
                 <SortTh k="from_high" label="距高%" />
                 <SortTh k="from_ma50" label="距MA50%" />
@@ -455,10 +438,6 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                             </div>
                           : '—'}
                       </td>
-                      {/* 停損欄 */}
-                      <td style={{ fontSize:12, color:'var(--down)' }}>
-                        {vcp.stop_loss > 0 ? vcp.stop_loss : '—'}
-                      </td>
                       <td>
                         {row.pocket_pivot
                           ? <span className="pp-badge">🚀 PP</span>
@@ -504,7 +483,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                     {/* ── 展開詳情 ── */}
                     {detail === row.symbol && (
                       <tr className="detail-row">
-                        <td colSpan={15}>
+                        <td colSpan={14}>
                           <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
 
                             {/* 選股建議卡 */}
@@ -577,10 +556,6 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                                     {vcp.atr_ratio != null &&
                                       <div className="cond-item info">ATR比值: {vcp.atr_ratio}（&lt;0.8=收縮）</div>}
                                     <div className="cond-item info">樞紐點: {vcp.pivot}（距 {vcp.dist_pivot}%）</div>
-                                    {vcp.stop_loss > 0 &&
-                                      <div className="cond-item info" style={{ color:'var(--down)' }}>
-                                        停損: {vcp.stop_loss}（{row.close > 0 ? `-${((row.close - vcp.stop_loss)/row.close*100).toFixed(1)}%` : ''}）
-                                      </div>}
                                     {vcp.base_days > 0 &&
                                       <div className="cond-item info">Base 長度: {vcp.base_days} 天（規格 15–65）</div>}
                                     {vcp.higher_lows &&

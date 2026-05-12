@@ -313,11 +313,7 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         break_s += 3; details.append(f"ATR收縮({atr_ratio})")
     s100 += min(break_s, 10)
 
-    # ══ 停損價 = min(最後收縮低點, pivot × 0.93) ════════════════
-    if vcp_seq:
-        stop_loss = round(min(float(vcp_seq[-1]["trough"]), pivot * 0.93), 2)
-    else:
-        stop_loss = round(pivot * 0.93, 2)
+    stop_loss = 0.0  # 已移除停損計算
 
     # ══ days_below_pivot ═══════════════════════════════════════
     recent_c         = c_arr[-20:] if len(c_arr) >= 20 else c_arr
@@ -327,21 +323,14 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     today_close = float(c_arr[-1])
     vol_today   = float(v[-1])
 
-    # 偷跑：突破最後 5 日小平台（但尚未突破主 pivot）
-    mini_break = (len(h) >= 5 and
-                  today_close > float(max(h[-5:-1])) and
-                  today_close < pivot)
-
     if today_close > pivot * 1.05:
         buy_status = "過度延伸"
     elif today_close > pivot and vol50 > 0 and vol_today >= vol50 * 1.5:
         buy_status = "正式突破"
     elif today_close > pivot:
-        buy_status = "突破（量不足）"
-    elif mini_break and num_cont >= 2:
-        buy_status = "偷跑"
+        buy_status = "突破(量不足)"
     elif 0 <= dist_piv <= 5 and num_cont >= 2:
-        buy_status = "等待"
+        buy_status = "等待突破"
     elif num_cont >= 2:
         buy_status = "整理中"
     else:
@@ -491,7 +480,6 @@ def generate_recommendation(r: dict) -> dict:
     depths           = vcp.get("contraction_depths", [])
     vol_contracting  = vcp.get("vol_contracting", False)
     last_depth_pct   = vcp.get("last_depth_pct", 0.0)
-    vcp_stop_loss    = vcp.get("stop_loss")              # VCP 算出的停損價
     buy_status       = vcp.get("buy_status", "—")
     higher_lows      = vcp.get("higher_lows", False)
     base_days        = vcp.get("base_days", 0)
@@ -531,112 +519,65 @@ def generate_recommendation(r: dict) -> dict:
             setup="過度延伸",
         )
 
-    # ── 停損基準：優先用 VCP 算出的精確停損，次之 pivot*0.93 ──
-    def _stop(entry_price):
-        if vcp_stop_loss and vcp_stop_loss > 0:
-            return vcp_stop_loss
-        return round(entry_price * 0.925, 2)
-
     # ── 1. 正式突破（最高優先）──────────────────────────────
-    # buy_status == '正式突破'：Close > pivot + 放量 ≥ 50日均量×1.5
     if buy_status == "正式突破" and contractions >= 2 and rs >= 60:
-        entry = close
-        stop  = _stop(entry)
-        tgt   = entry + (entry - stop) * 2.5
-        stop_pct = round((entry - stop) / entry * 100, 1)
+        entry = pivot * 1.003
         return make(
             "buy_now", "🟢 正式突破，可進場", "high",
             f"放量突破樞紐 {pivot}！{vcp_desc}，RS {rs:.0f}。"
-            f"進場 {round(entry,2)}，停損 {round(stop,2)}（-{stop_pct}%），"
-            f"目標 {round(tgt,2)}（2.5:1）。買入區間 ≤ {round(pivot*1.05,2)}（超過5%不追）。",
+            f"買入區間 ≤ {round(pivot*1.05,2)}（超過5%不追）。",
             setup=f"VCP正式突破({vcp_score100}分)",
-            entry=entry, stop=stop, target=tgt, rr=2.5,
+            entry=entry,
         )
 
-    # ── 2. Pocket Pivot（偷跑進場）──────────────────────────
+    # ── 2. Pocket Pivot ──────────────────────────────────
     if pp and contractions >= 2 and rs >= 65 and days_below_pivot >= 8:
-        entry = close
-        stop  = _stop(entry)
-        tgt   = entry + (entry - stop) * 2.5
-        stop_pct = round((entry - stop) / entry * 100, 1)
         return make(
-            "buy_now", "🚀 Pocket Pivot 偷跑", "high",
+            "buy_now", "🚀 Pocket Pivot", "high",
             f"今日紅K量超過過去10日所有黑K最大量。{vcp_desc}，RS {rs:.0f}，"
-            f"末段收縮 {last_depth_pct:.1f}%，整理{days_below_pivot}/20天。"
-            f"進場 {round(entry,2)}，停損 {round(stop,2)}（-{stop_pct}%），"
-            f"目標 {round(tgt,2)}（2.5:1）。停損距離需 ≤ 5%。",
+            f"末段收縮 {last_depth_pct:.1f}%，整理{days_below_pivot}/20天。",
             setup=f"Pocket Pivot({vcp_score100}分)",
-            entry=entry, stop=stop, target=tgt, rr=2.5,
+            entry=close,
         )
 
-    # ── 3. 偷跑（突破小平台）───────────────────────────────
-    if buy_status == "偷跑" and contractions >= 2 and rs >= 65:
-        entry = close
-        stop  = _stop(entry)
-        stop_pct = round((entry - stop) / entry * 100, 1)
-        if stop_pct <= 5:   # 停損距離必須 ≤ 5%
-            tgt = entry + (entry - stop) * 2.5
-            return make(
-                "buy_now", "🔔 偷跑買點", "high",
-                f"突破最後5日小平台。{vcp_desc}，RS {rs:.0f}，樞紐 {pivot}（距 {dist_piv}%）。"
-                f"進場 {round(entry,2)}，停損 {round(stop,2)}（-{stop_pct}%），"
-                f"目標 {round(tgt,2)}（2.5:1）。",
-                setup=f"偷跑({vcp_score100}分)",
-                entry=entry, stop=stop, target=tgt, rr=2.5,
-            )
-
-    # ── 4. 等待突破（距樞紐 0–3%）──────────────────────────
+    # ── 3. 即將突破（距樞紐 0–3%）──────────────────────────
     if (pivot and dist_piv is not None and 0 <= dist_piv <= 3
             and vcp_score100 >= 55 and contractions >= 2 and rs >= 60 and days_below_pivot >= 8):
         entry = pivot * 1.003
-        stop  = _stop(entry)
-        tgt   = entry + (entry - stop) * 2.5
-        stop_pct = round((entry - stop) / entry * 100, 1)
         return make(
             "breakout", "🔔 即將突破，等放量", "high",
             f"距樞紐點 {pivot} 僅 {dist_piv}%，整理{days_below_pivot}/20天。"
             f"{vcp_desc}，RS {rs:.0f}，末段收縮 {last_depth_pct:.1f}%。"
-            f"突破放量（≥50日均量×1.5）後掛單 ≤ {round(pivot*1.005,2)}，"
-            f"停損 {round(stop,2)}（-{stop_pct}%），目標 {round(tgt,2)}（2.5:1）。",
+            f"等放量（≥50日均量×1.5）突破後進場 ≤ {round(pivot*1.005,2)}。",
             setup=f"VCP等待突破({vcp_score100}分)",
-            entry=entry, stop=stop, target=tgt, rr=2.5,
+            entry=entry,
         )
 
-    # ── 5. 設置提醒（距樞紐 3–8%）──────────────────────────
+    # ── 4. 設置提醒（距樞紐 3–8%）──────────────────────────
     if (pivot and dist_piv is not None and 3 < dist_piv <= 8
             and vcp_score100 >= 45 and contractions >= 2 and rs >= 55):
         entry = pivot * 1.003
-        stop  = _stop(entry)
-        tgt   = entry + (entry - stop) * 2.5
         return make(
             "set_alert", "⏰ 設置突破提醒", "medium",
             f"距樞紐點 {pivot} 約 {dist_piv}%，{vcp_desc}，RS {rs:.0f}。"
-            f"設 {round(pivot*1.005,2)} 價格提醒，放量（×1.5）進場，"
-            f"停損 {round(stop,2)}，目標 {round(tgt,2)}。",
+            f"設 {round(pivot*1.005,2)} 價格提醒，放量突破後進場。",
             setup=f"VCP({vcp_score100}分)",
-            entry=entry, stop=stop, target=tgt, rr=2.5,
+            entry=entry,
         )
 
-    # ── 6. 整理觀察（距樞紐 8–25%）──────────────────────────
+    # ── 5. 整理觀察（距樞紐 8–25%）──────────────────────────
     if pivot and dist_piv is not None and 8 < dist_piv <= 25 and contractions >= 2:
-        entry = pivot * 1.003
-        stop  = _stop(entry)
-        tgt   = entry + (entry - stop) * 2.5
         return make(
             "watch", "👀 整理觀察", "low",
-            f"VCP 整理中，距樞紐點 {dist_piv}%，{vcp_desc}，RS {rs:.0f}，距MA50 {from_ma50:.1f}%。"
-            f"耐心等待波動收縮完成（目標進場 {round(entry,2)}）。",
+            f"VCP 整理中，距樞紐點 {dist_piv}%，{vcp_desc}，RS {rs:.0f}，距MA50 {from_ma50:.1f}%。",
             setup=f"VCP({vcp_score100}分)",
-            entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 7. 已突破過遠（> 5%）─────────────────────────────
+    # ── 6. 已突破過遠（> 5%）─────────────────────────────
     if pivot and dist_piv is not None and dist_piv < -5:
-        ma50_price = round(close / (1 + from_ma50 / 100), 2) if from_ma50 else 0
         return make(
             "extended", "⚠️ 突破後勿追高", "low",
-            f"已突破樞紐 {pivot}（超出進場窗口5%），目前距高 {from_high}%。"
-            f"等待回測 MA50（約 {ma50_price}）量縮整理後再評估。",
+            f"已突破樞紐 {pivot}（超出進場窗口5%），距高 {from_high}%。等回測整理。",
             setup="突破後延伸",
         )
 
