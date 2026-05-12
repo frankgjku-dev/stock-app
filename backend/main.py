@@ -117,20 +117,32 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
             score += 1
             details.append(f"健康回檔 ({pb*100:.1f}%)")
 
-    # Pivot Point = 近20日最高點
-    pivot     = round(float(max(h[-20:])) if len(h) >= 20 else cur_close, 2)
+    # Pivot Point = 5~45 交易日前的最高點
+    # 排除最近 5 日（避免剛創新高就當 pivot），
+    # 往前看 40 個交易日（≈ 8 週），捕捉整理區頂部
+    # 若一直漲的股票，此 pivot 會低於現價很多 → dist_piv 大負數 → 觸發「延伸勿追」
+    # 若正在底部整理的股票，此 pivot ≈ 整理區高點 → dist_piv ≈ 正數 → 正確
+    ph_start = max(len(h) - 45, 0)
+    ph_end   = max(len(h) - 5,  1)
+    pivot_h  = h[ph_start:ph_end]
+    pivot     = round(float(max(pivot_h)) if len(pivot_h) > 0 else cur_close, 2)
     dist_piv  = round((pivot - cur_close) / pivot * 100, 1)
     label     = ("VCP強" if score >= 4 else
                  "VCP中" if score >= 3 else
                  "VCP弱" if score >= 2 else "")
 
+    # 近20日收盤在 pivot 以下的天數（確認有真正在整理，而非剛衝破）
+    recent_c = df["Close"].values[-20:] if len(df) >= 20 else df["Close"].values
+    days_below_pivot = int(sum(1 for c in recent_c if float(c) < pivot))
+
     return {
-        "score":      score,
-        "label":      label,
-        "pivot":      pivot,
-        "dist_pivot": dist_piv,   # 正數=距突破點%，負數=已突破
-        "atr_ratio":  atr_ratio,
-        "details":    details,
+        "score":            score,
+        "label":            label,
+        "pivot":            pivot,
+        "dist_pivot":       dist_piv,          # 正=距突破點%，負=已突破
+        "atr_ratio":        atr_ratio,
+        "days_below_pivot": days_below_pivot,  # 近20日有幾天在 pivot 以下
+        "details":          details,
     }
 
 
@@ -221,9 +233,10 @@ def generate_recommendation(r: dict) -> dict:
     from_ma50  = r.get("from_ma50",  0)        # 距MA50% （正=高於MA50）
     from_ma200 = r.get("from_ma200", 0)        # 距MA200%
 
-    pivot      = vcp.get("pivot")
-    dist_piv   = vcp.get("dist_pivot")   # 正=距突破點%, 負=已突破
-    vcp_score  = vcp.get("score", 0)
+    pivot            = vcp.get("pivot")
+    dist_piv         = vcp.get("dist_pivot")       # 正=距突破點%, 負=已突破
+    vcp_score        = vcp.get("score", 0)
+    days_below_pivot = vcp.get("days_below_pivot", 0)  # 近20日在pivot以下天數
 
     def make(action, label, urgency, reason, setup="",
              entry=None, stop=None, target=None, rr=None):
@@ -254,15 +267,14 @@ def generate_recommendation(r: dict) -> dict:
         )
 
     # ── 1. Pocket Pivot（最高優先） ──────────────────────
-    # 需要：PP 訊號 + VCP ≥ 3 + RS ≥ 65 + 距高點合理（< -3%，不在頂部）
-    # 距高點 > -3% 且 VCP 不夠強，視為已在頂部附近，不推薦
-    if pp and vcp_score >= 3 and rs >= 65 and from_high <= -3:
+    # 需要：PP + VCP ≥ 3 + RS ≥ 65 + 至少 8 天在 pivot 以下整理（有真正的底部）
+    if pp and vcp_score >= 3 and rs >= 65 and days_below_pivot >= 8:
         stop   = close * 0.925
         tgt    = close + (close - stop) * 2.5
         return make(
             "buy_now", "🚀 可考慮進場", "high",
             f"Pocket Pivot！量能突破過去10日黑K最大量，VCP {vcp_score}/5，RS {rs:.0f}，"
-            f"距高點 {from_high}%，距MA50 {from_ma50:.1f}%。"
+            f"近20日有 {days_below_pivot} 天在樞紐 {pivot} 以下整理，距MA50 {from_ma50:.1f}%。"
             f"進場 {close}，停損 {round(stop,2)}（{round((close-stop)/close*100,1)}%），"
             f"目標 {round(tgt,2)}（2.5:1）。",
             setup=f"Pocket Pivot + VCP{vcp_score}",
@@ -270,31 +282,33 @@ def generate_recommendation(r: dict) -> dict:
         )
 
     # ── 2. 剛突破樞紐點（0~5% 以內）──────────────────────
-    # 需要：VCP ≥ 3 + RS ≥ 60 + 距高點不過遠（上方 5% 以內代表確實剛突破）
-    if pivot and dist_piv is not None and -5 <= dist_piv < 0 and vcp_score >= 3 and rs >= 60:
+    # 需要：VCP ≥ 3 + RS ≥ 60 + 近20日至少 8 天在 pivot 以下（驗證有底部整理）
+    if pivot and dist_piv is not None and -5 <= dist_piv < 0 \
+            and vcp_score >= 3 and rs >= 60 and days_below_pivot >= 8:
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "buy_now", "🟢 剛突破，可進場", "high",
-            f"剛突破樞紐 {pivot}（{abs(dist_piv):.1f}%），VCP {vcp_score}/5，RS {rs:.0f}，"
-            f"距MA50 {from_ma50:.1f}%。量能確認後進場 ≤ {round(entry,2)}，"
-            f"停損 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），目標 {round(tgt,2)}。",
+            f"剛突破樞紐 {pivot}（超出 {abs(dist_piv):.1f}%），VCP {vcp_score}/5，RS {rs:.0f}，"
+            f"整理 {days_below_pivot}/20 天，距MA50 {from_ma50:.1f}%。"
+            f"進場 ≤ {round(entry,2)}，停損 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），目標 {round(tgt,2)}。",
             setup=f"VCP突破 ({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
     # ── 3. 即將突破（距樞紐 0–3%）────────────────────────
-    # 需要：VCP ≥ 3 + RS ≥ 60
-    if pivot and dist_piv is not None and 0 <= dist_piv <= 3 and vcp_score >= 3 and rs >= 60:
+    # 需要：VCP ≥ 3 + RS ≥ 60 + 近20日至少 8 天在 pivot 以下（有真正整理底部）
+    if pivot and dist_piv is not None and 0 <= dist_piv <= 3 \
+            and vcp_score >= 3 and rs >= 60 and days_below_pivot >= 8:
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "breakout", "🔔 即將突破", "high",
             f"距樞紐點 {pivot} 僅 {dist_piv}%，VCP {vcp_score}/5，RS {rs:.0f}，"
-            f"距MA50 {from_ma50:.1f}%。突破放量後掛單 {round(entry,2)}，"
-            f"停損 {round(stop,2)}，目標 {round(tgt,2)}（2.5:1）。",
+            f"近20日有 {days_below_pivot} 天整理，距MA50 {from_ma50:.1f}%。"
+            f"突破放量後掛單 {round(entry,2)}，停損 {round(stop,2)}，目標 {round(tgt,2)}（2.5:1）。",
             setup=f"VCP ({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
