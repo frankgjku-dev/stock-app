@@ -796,6 +796,103 @@ body {
 .wl-row:hover .wl-rm { opacity: 1; }
 .wl-rm:hover { background: var(--up-dim); color: var(--up); }
 
+/* ═══════════════════════════════════════════════════════
+   SCREENER — 選股建議
+═══════════════════════════════════════════════════════ */
+
+/* 優先度篩選按鈕組 */
+.urgency-filter {
+  display: flex; gap: 3px;
+  background: var(--surface-2);
+  padding: 3px; border-radius: var(--r-md);
+  border: 1px solid var(--border);
+}
+.urgency-btn {
+  background: transparent; border: none;
+  color: var(--text-2); padding: 4px 12px;
+  border-radius: var(--r-sm); font-size: 12px;
+  cursor: pointer; transition: all var(--trans);
+}
+.urgency-btn:hover { color: var(--text-1); }
+.urgency-btn.active { background: var(--surface-3); color: var(--accent); font-weight: 600; }
+
+/* 高優先候選面板 */
+.priority-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.priority-title {
+  font-size: 15px; font-weight: 700; color: var(--text-1);
+  margin-bottom: 14px; display: flex; align-items: center; gap: 10px;
+}
+.priority-count {
+  background: var(--accent-dim); color: var(--accent);
+  font-size: 12px; padding: 2px 10px; border-radius: 20px;
+}
+.priority-sub { font-size: 12px; color: var(--text-3); font-weight: 400; }
+
+.priority-cards {
+  display: flex; gap: 12px; flex-wrap: wrap;
+}
+.priority-card {
+  border: 1px solid; border-radius: var(--r-md);
+  padding: 14px 16px; flex: 1; min-width: 240px; max-width: 340px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: box-shadow var(--trans);
+  cursor: default;
+}
+.priority-card:hover { box-shadow: var(--shadow-md); }
+
+.pc-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.pc-sym {
+  font-size: 16px; font-weight: 700; color: var(--accent);
+  cursor: pointer; transition: opacity var(--trans);
+}
+.pc-sym:hover { opacity: .75; }
+.pc-name { font-size: 12px; color: var(--text-2); margin-left: 6px; }
+.pc-action { font-size: 12px; font-weight: 700; }
+
+.pc-levels { display: flex; gap: 12px; flex-wrap: wrap; }
+.pc-level { display: flex; flex-direction: column; gap: 2px; }
+.pc-lk { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .4px; }
+.pc-lv { font-size: 14px; font-weight: 700; }
+
+.pc-reason {
+  font-size: 11px; color: var(--text-2); line-height: 1.6;
+  border-top: 1px solid rgba(120,90,60,0.12); padding-top: 8px;
+}
+.pc-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px;
+}
+.pc-meta { font-size: 11px; color: var(--text-3); }
+
+/* 建議欄 badge */
+.rec-badge {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 展開詳情裡的建議卡 */
+.rec-detail-card {
+  border: 1px solid; border-radius: var(--r-md);
+  padding: 14px 16px; min-width: 240px; max-width: 320px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.rec-detail-title { font-size: 13px; font-weight: 700; }
+.rec-detail-reason { font-size: 12px; color: var(--text-2); line-height: 1.7; }
+.rec-detail-levels { display: flex; gap: 14px; flex-wrap: wrap; }
+.rdl-item { display: flex; flex-direction: column; gap: 3px; }
+.rdl-k { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .4px; }
+.rdl-v { font-size: 15px; font-weight: 700; }
+
 /* ── 滾動條 ──────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track  { background: transparent; }
