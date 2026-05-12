@@ -615,6 +615,38 @@ body {
   border: 1px solid var(--border);
 }
 
+/* ── Favorites ───────────────────────────────────────── */
+.fav-star-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 18px; color: var(--text-3);
+  transition: color var(--trans), transform var(--trans);
+  padding: 0 4px; line-height: 1;
+}
+.fav-star-btn:hover  { color: var(--warn); transform: scale(1.2); }
+.fav-star-btn.active { color: var(--warn); }
+
+.fav-filter-btn {
+  background: transparent;
+  border: 1px solid var(--border-md);
+  border-radius: var(--r-xl);
+  color: var(--text-2);
+  padding: 5px 14px; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all var(--trans);
+}
+.fav-filter-btn:hover { border-color: var(--warn); color: var(--warn); }
+.fav-filter-btn.active {
+  background: var(--warn-dim); border-color: var(--warn); color: var(--warn); font-weight: 600;
+}
+
+.star-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 15px; color: var(--text-3);
+  transition: color var(--trans), transform var(--trans);
+  padding: 2px;
+}
+.star-btn:hover  { color: var(--warn); transform: scale(1.15); }
+.star-btn.active { color: var(--warn); }
+
 /* ── 滾動條 ──────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track  { background: transparent; }

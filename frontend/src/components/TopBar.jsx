@@ -2,8 +2,8 @@ import { useState, useCallback, useRef } from 'react'
 import { API_BASE } from '../config'
 
 const INTERVALS = [
-  { label: '1分', interval: '1m',  period: '7d'  },
-  { label: '5分', interval: '5m',  period: '60d' },
+  { label: '1分',  interval: '1m',  period: '7d'  },
+  { label: '5分',  interval: '5m',  period: '60d' },
   { label: '15分', interval: '15m', period: '60d' },
   { label: '60分', interval: '60m', period: '60d' },
   { label: '日',   interval: '1d',  period: '1y'  },
@@ -11,36 +11,36 @@ const INTERVALS = [
   { label: '月',   interval: '1mo', period: 'max' },
 ]
 
-export default function TopBar({ symbol, quote, interval, onSymbolChange, onIntervalChange }) {
-  const [query, setQuery] = useState('')
+export default function TopBar({
+  symbol, quote, interval,
+  onSymbolChange, onIntervalChange,
+  isFavorite, onToggleFavorite,
+}) {
+  const [query,   setQuery]   = useState('')
   const [results, setResults] = useState([])
-  const [open, setOpen] = useState(false)
+  const [open,    setOpen]    = useState(false)
   const timerRef = useRef(null)
 
   const search = useCallback(async (q) => {
     if (!q.trim()) { setResults([]); setOpen(false); return }
     const r = await fetch(`${API_BASE}/api/stocks/search?q=${encodeURIComponent(q)}`)
     const data = await r.json()
-    setResults(data)
-    setOpen(data.length > 0)
+    setResults(data); setOpen(data.length > 0)
   }, [])
 
   function handleChange(e) {
-    const q = e.target.value
-    setQuery(q)
+    const q = e.target.value; setQuery(q)
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => search(q), 200)
   }
 
   function pick(s) {
-    onSymbolChange(s.symbol)
-    setQuery('')
-    setOpen(false)
+    onSymbolChange(s.symbol); setQuery(''); setOpen(false)
   }
 
-  const change = quote?.change ?? 0
+  const change    = quote?.change     ?? 0
   const changePct = quote?.change_pct ?? 0
-  const colorClass = change > 0 ? 'up' : change < 0 ? 'down' : 'flat'
+  const colorCls  = change > 0 ? 'up' : change < 0 ? 'down' : 'flat'
 
   return (
     <div className="topbar">
@@ -68,21 +68,29 @@ export default function TopBar({ symbol, quote, interval, onSymbolChange, onInte
         )}
       </div>
 
-      {/* Quote */}
+      {/* Quote + Favorite star */}
       {quote && (
         <div className="quote-block">
           <span className="quote-name">{quote.name || symbol}</span>
-          <span className={`quote-price ${colorClass}`}>
+          <span className={`quote-price ${colorCls}`}>
             {quote.price?.toFixed(2) ?? '--'}
           </span>
-          <span className={`quote-change ${colorClass}`}>
+          <span className={`quote-change ${colorCls}`}>
             {change >= 0 ? '+' : ''}{change.toFixed(2)}
             &nbsp;({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
           </span>
+          {/* ★ 加入最愛 */}
+          <button
+            className={`fav-star-btn ${isFavorite ? 'active' : ''}`}
+            onClick={onToggleFavorite}
+            title={isFavorite ? '從我的最愛移除' : '加入我的最愛'}
+          >
+            {isFavorite ? '★' : '☆'}
+          </button>
         </div>
       )}
 
-      {/* Interval */}
+      {/* Intervals */}
       <div className="interval-selector">
         {INTERVALS.map(({ label, interval: iv, period }) => (
           <button

@@ -35,7 +35,7 @@ function vcpColor(score) {
   return null
 }
 
-export default function Screener({ onSelectStock }) {
+export default function Screener({ onSelectStock, favorites = [], onToggleFavorite }) {
   const [status,    setStatus]    = useState(null)
   const [results,   setResults]   = useState([])
   const [progress,  setProgress]  = useState(0)
@@ -45,6 +45,7 @@ export default function Screener({ onSelectStock }) {
   const [vcpOnly,   setVcpOnly]   = useState(false)
   const [minVcp,    setMinVcp]    = useState(3)
   const [ppOnly,    setPpOnly]    = useState(false)
+  const [favOnly,   setFavOnly]   = useState(false)
   const [sortKey,   setSortKey]   = useState('rs_rating')
   const [sortAsc,   setSortAsc]   = useState(false)
   const [market,    setMarket]    = useState(null)
@@ -86,6 +87,7 @@ export default function Screener({ onSelectStock }) {
     if (r.passed < minPassed) return false
     if (vcpOnly && (r.vcp?.score ?? 0) < minVcp) return false
     if (ppOnly  && !r.pocket_pivot) return false
+    if (favOnly && !favorites.includes(r.symbol)) return false
     return true
   }).sort((a, b) => {
     const va = sortKey === 'vcp' ? (a.vcp?.score ?? 0) : (a[sortKey] ?? 0)
@@ -191,6 +193,13 @@ export default function Screener({ onSelectStock }) {
           <input type="checkbox" checked={ppOnly} onChange={e => setPpOnly(e.target.checked)} />
           只顯示 Pocket Pivot
         </label>
+        <button
+          className={`fav-filter-btn ${favOnly ? 'active' : ''}`}
+          onClick={() => setFavOnly(p => !p)}
+          title="只顯示我的最愛"
+        >
+          ★ 我的最愛 {favorites.length > 0 ? `(${favorites.length})` : ''}
+        </button>
         {status === 'done' && <span className="result-count">符合：{filtered.length} 檔</span>}
       </div>
 
@@ -206,7 +215,7 @@ export default function Screener({ onSelectStock }) {
           <table className="screener-table">
             <thead>
               <tr>
-                <th>代碼</th><th>名稱</th>
+                <th>★</th><th>代碼</th><th>名稱</th>
                 <SortTh k="close"     label="收盤" />
                 <SortTh k="rs_rating" label="RS" />
                 <SortTh k="passed"    label="條件" />
@@ -224,6 +233,15 @@ export default function Screener({ onSelectStock }) {
                 return (
                   <>
                     <tr key={row.symbol} className="data-row">
+                      <td>
+                        <button
+                          className={`star-btn ${favorites.includes(row.symbol) ? 'active' : ''}`}
+                          onClick={() => onToggleFavorite(row.symbol)}
+                          title={favorites.includes(row.symbol) ? '從最愛移除' : '加入最愛'}
+                        >
+                          {favorites.includes(row.symbol) ? '★' : '☆'}
+                        </button>
+                      </td>
                       <td className="sym">{row.symbol}</td>
                       <td>{row.name}</td>
                       <td>{row.close}</td>

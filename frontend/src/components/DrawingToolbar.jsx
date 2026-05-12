@@ -1,37 +1,43 @@
 const TOOLS = [
-  { id: 'cursor',     svg: 'M4 4l8 20 4-8 8-4z',                         label: '選取 / 移動' },
-  { id: 'trendline',  svg: 'M5 19L19 5M5 19h4M19 5v4',                   label: '趨勢線 (兩點延伸)' },
-  { id: 'horizontal', svg: 'M3 12h18M3 12l3-3M3 12l3 3',                  label: '水平線' },
-  { id: 'vertical',   svg: 'M12 3v18M12 3l-3 3M12 3l3 3',                 label: '垂直線' },
-  { id: 'rectangle',  svg: 'M4 4h16v16H4z',                               label: '矩形' },
-  { id: 'fibonacci',  svg: 'M4 6h16M4 10h16M4 14h16M4 18h16',            label: '斐波那契回調' },
+  { id: 'cursor',     icon: '↖',  label: '選取 / 移動 (Esc 取消選取)' },
+  null, // separator
+  { id: 'trendline',  icon: '↗',  label: '趨勢線：點兩下定端點，雙向延伸' },
+  { id: 'ray',        icon: '→',  label: '射線：點兩下，單向延伸' },
+  { id: 'horizontal', icon: '—',  label: '水平線：點一下即完成' },
+  { id: 'vertical',   icon: '|',  label: '垂直線：點一下即完成' },
+  { id: 'rectangle',  icon: '▭',  label: '矩形區間：點兩下定對角' },
+  { id: 'fibonacci',  icon: '≋',  label: '斐波那契回調：點兩下定高低點' },
 ]
 
-function Icon({ path }) {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d={path} />
-    </svg>
-  )
-}
-
-export default function DrawingToolbar({ activeTool, onToolChange }) {
+export default function DrawingToolbar({ activeTool, onToolChange, onClearAll }) {
   return (
     <div className="drawing-toolbar">
-      {TOOLS.map(({ id, svg, label }, i) => (
-        <>
-          {i === 1 && <div key="sep" className="tool-sep" />}
-          <button
-            key={id}
-            className={`tool-btn ${activeTool === id ? 'active' : ''}`}
-            onClick={() => onToolChange(id)}
-            title={label}
-          >
-            <Icon path={svg} />
-          </button>
-        </>
-      ))}
+      {TOOLS.map((t, i) =>
+        t === null
+          ? <div key={`sep-${i}`} className="tool-sep" />
+          : (
+            <button
+              key={t.id}
+              className={`tool-btn ${activeTool === t.id ? 'active' : ''}`}
+              onClick={() => onToolChange(t.id)}
+              title={t.label}
+            >
+              <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1 }}>{t.icon}</span>
+            </button>
+          )
+      )}
+
+      <div className="tool-sep" />
+
+      {/* 清除所有繪圖 */}
+      <button
+        className="tool-btn"
+        title="清除所有繪圖 (Backspace 刪除最後一筆)"
+        onClick={onClearAll}
+        style={{ fontSize: 13 }}
+      >
+        🗑
+      </button>
     </div>
   )
 }
