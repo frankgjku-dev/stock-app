@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import TopBar         from './components/TopBar'
-import Chart          from './components/Chart'
-import DrawingToolbar from './components/DrawingToolbar'
-import IndicatorBar   from './components/IndicatorBar'
-import Screener       from './pages/Screener'
-import Calculator     from './pages/Calculator'
-import Journal        from './pages/Journal'
-import useStockData   from './hooks/useStockData'
+import TopBar          from './components/TopBar'
+import Chart           from './components/Chart'
+import DrawingToolbar  from './components/DrawingToolbar'
+import IndicatorBar    from './components/IndicatorBar'
+import WatchlistSidebar from './components/WatchlistSidebar'
+import Screener        from './pages/Screener'
+import Calculator      from './pages/Calculator'
+import Journal         from './pages/Journal'
+import useStockData    from './hooks/useStockData'
 
 const TABS = [
   { id: 'chart',      label: 'K線分析' },
@@ -15,8 +16,11 @@ const TABS = [
   { id: 'journal',    label: '交易日誌' },
 ]
 
-function loadFavorites() {
-  try { return JSON.parse(localStorage.getItem('tw_favorites') || '[]') } catch { return [] }
+const DEFAULT_WATCHLIST = { groups: [] }
+
+function loadWatchlist() {
+  try { return JSON.parse(localStorage.getItem('tw_watchlist') || 'null') || DEFAULT_WATCHLIST }
+  catch { return DEFAULT_WATCHLIST }
 }
 
 export default function App() {
@@ -28,31 +32,51 @@ export default function App() {
   const [indicators, setIndicators] = useState({
     ma5: true, ma10: true, ma20: true, ma60: true, ma120: false, ma240: false,
   })
-  const [favorites, setFavorites] = useState(loadFavorites)
-
-  // ref passed to Chart so DrawingToolbar can clear drawings
+  const [watchlist, setWatchlist] = useState(loadWatchlist)
   const chartClearRef = useRef(null)
 
   useEffect(() => {
-    localStorage.setItem('tw_favorites', JSON.stringify(favorites))
-  }, [favorites])
+    localStorage.setItem('tw_watchlist', JSON.stringify(watchlist))
+  }, [watchlist])
 
   const { candles, quote, loading } = useStockData(symbol, interval, period)
 
   const handleIntervalChange = useCallback((iv, p) => {
     setInterval(iv); setPeriod(p)
   }, [])
-
   const toggleIndicator = useCallback((key) => {
     setIndicators(prev => ({ ...prev, [key]: !prev[key] }))
   }, [])
 
-  const isFavorite = favorites.includes(symbol)
-  const toggleFavorite = useCallback(() => {
-    setFavorites(prev =>
-      prev.includes(symbol) ? prev.filter(s => s !== symbol) : [...prev, symbol]
-    )
-  }, [symbol])
+  /* ── watchlist operations ── */
+  const addGroup = useCallback((name) => {
+    setWatchlist(prev => ({
+      ...prev,
+      groups: [...prev.groups, { id: `g_${Date.now()}`, name, stocks: [] }],
+    }))
+  }, [])
+
+  const deleteGroup = useCallback((id) => {
+    setWatchlist(prev => ({ ...prev, groups: prev.groups.filter(g => g.id !== id) }))
+  }, [])
+
+  const renameGroup = useCallback((id, name) => {
+    setWatchlist(prev => ({
+      ...prev,
+      groups: prev.groups.map(g => g.id === id ? { ...g, name } : g),
+    }))
+  }, [])
+
+  const toggleInGroup = useCallback((sym, groupId) => {
+    setWatchlist(prev => ({
+      ...prev,
+      groups: prev.groups.map(g => {
+        if (g.id !== groupId) return g
+        const has = g.stocks.includes(sym)
+        return { ...g, stocks: has ? g.stocks.filter(s => s !== sym) : [...g.stocks, sym] }
+      }),
+    }))
+  }, [])
 
   return (
     <div className="app">
@@ -61,12 +85,12 @@ export default function App() {
         <TopBar
           symbol={symbol} quote={quote} interval={interval}
           onSymbolChange={setSymbol} onIntervalChange={handleIntervalChange}
-          isFavorite={isFavorite} onToggleFavorite={toggleFavorite}
+          watchlist={watchlist}
+          onToggleInGroup={toggleInGroup}
+          onAddGroup={addGroup}
         />
       ) : (
-        <div className="topbar">
-          <div className="logo">台股分析</div>
-        </div>
+        <div className="topbar"><div className="logo">台股分析</div></div>
       )}
 
       {/* ── Tab 列 ── */}
@@ -102,16 +126,23 @@ export default function App() {
               />
             </div>
           </div>
+          <WatchlistSidebar
+            watchlist={watchlist}
+            currentSymbol={symbol}
+            onSelectSymbol={(s) => setSymbol(s)}
+            onToggleInGroup={toggleInGroup}
+            onAddGroup={addGroup}
+            onDeleteGroup={deleteGroup}
+            onRenameGroup={renameGroup}
+          />
         </div>
       )}
 
       {tab === 'screener' && (
         <Screener
-          favorites={favorites}
-          onToggleFavorite={(s) => setFavorites(prev =>
-            prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
-          )}
           onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
+          watchlist={watchlist}
+          onToggleInGroup={toggleInGroup}
         />
       )}
       {tab === 'calculator' && <Calculator />}

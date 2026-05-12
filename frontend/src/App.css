@@ -615,15 +615,53 @@ body {
   border: 1px solid var(--border);
 }
 
-/* ── Favorites ───────────────────────────────────────── */
+/* ── Star buttons (TopBar & Screener) ─────────────────── */
 .fav-star-btn {
   background: none; border: none; cursor: pointer;
   font-size: 18px; color: var(--text-3);
   transition: color var(--trans), transform var(--trans);
-  padding: 0 4px; line-height: 1;
+  padding: 2px 6px; line-height: 1;
 }
 .fav-star-btn:hover  { color: var(--warn); transform: scale(1.2); }
 .fav-star-btn.active { color: var(--warn); }
+
+/* ★ 加入自選股 popup */
+.fav-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border-md);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  padding: 10px 0;
+}
+.fav-popup-title {
+  font-size: 11px; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .5px;
+  padding: 0 14px 8px;
+}
+.fav-popup-hint { font-size: 12px; color: var(--text-3); padding: 0 14px 6px; }
+.fav-popup-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; cursor: pointer; font-size: 13px; color: var(--text-2);
+  transition: background var(--trans);
+}
+.fav-popup-row:hover { background: var(--surface-2); }
+.fav-popup-row input { accent-color: var(--warn); cursor: pointer; }
+.fav-check { margin-left: auto; color: var(--warn); font-size: 12px; }
+.fav-popup-sep { border-top: 1px solid var(--border); margin: 6px 0; }
+.fav-popup-add { display: flex; gap: 6px; padding: 4px 10px; }
+.fav-new-group {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer;
+  font-size: 12px; color: var(--accent);
+  padding: 6px 14px;
+  transition: background var(--trans);
+}
+.fav-new-group:hover { background: var(--surface-2); }
 
 .fav-filter-btn {
   background: transparent;
@@ -646,6 +684,117 @@ body {
 }
 .star-btn:hover  { color: var(--warn); transform: scale(1.15); }
 .star-btn.active { color: var(--warn); }
+
+/* ═══════════════════════════════════════════════════════
+   WATCHLIST SIDEBAR
+═══════════════════════════════════════════════════════ */
+.wl-sidebar {
+  width: 170px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wl-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.wl-title { font-size: 12px; font-weight: 700; color: var(--text-1); letter-spacing: .3px; }
+.wl-add-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--accent);
+  line-height: 1; padding: 0 2px;
+  transition: transform var(--trans);
+}
+.wl-add-btn:hover { transform: scale(1.2); }
+
+.wl-new-row {
+  display: flex; gap: 4px; padding: 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.wl-input {
+  flex: 1; background: var(--surface-2);
+  border: 1px solid var(--border-md); border-radius: var(--r-sm);
+  color: var(--text-1); padding: 4px 8px; font-size: 12px;
+  outline: none;
+}
+.wl-input:focus { border-color: var(--accent); }
+.wl-edit { flex: 1; min-width: 0; }
+.wl-ok, .wl-no {
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; padding: 2px 4px; border-radius: var(--r-sm);
+}
+.wl-ok { color: var(--down); }
+.wl-ok:hover { background: var(--down-dim); }
+.wl-no { color: var(--up); }
+.wl-no:hover { background: var(--up-dim); }
+
+.wl-groups { flex: 1; overflow-y: auto; }
+
+.wl-hint {
+  font-size: 12px; color: var(--text-3);
+  text-align: center; padding: 24px 12px;
+  line-height: 1.6;
+}
+
+.wl-group { border-bottom: 1px solid var(--border); }
+
+.wl-group-hd {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 10px; cursor: pointer;
+  transition: background var(--trans);
+}
+.wl-group-hd:hover { background: var(--surface-2); }
+.wl-arrow { font-size: 9px; color: var(--text-3); flex-shrink: 0; }
+.wl-group-name {
+  font-size: 12px; font-weight: 600; color: var(--text-1);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wl-count {
+  font-size: 10px; color: var(--text-3);
+  background: var(--surface-2);
+  border-radius: 10px; padding: 1px 6px; flex-shrink: 0;
+}
+.wl-del-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: var(--text-3); padding: 1px 3px;
+  opacity: 0; border-radius: 3px;
+  transition: all var(--trans);
+}
+.wl-group-hd:hover .wl-del-btn { opacity: 1; }
+.wl-del-btn:hover { background: var(--up-dim); color: var(--up); }
+
+.wl-stocks { padding: 2px 0 6px; }
+
+.wl-empty-group {
+  font-size: 11px; color: var(--text-3);
+  padding: 6px 14px; line-height: 1.5;
+}
+
+.wl-row {
+  display: flex; align-items: center;
+  padding: 5px 10px 5px 22px;
+  cursor: pointer; transition: background var(--trans);
+  gap: 4px;
+}
+.wl-row:hover { background: var(--surface-2); }
+.wl-row.current { background: var(--accent-dim); }
+.wl-row.current .wl-sym { color: var(--accent); font-weight: 700; }
+.wl-sym { font-size: 13px; color: var(--text-1); flex: 1; }
+.wl-rm {
+  background: none; border: none; cursor: pointer;
+  font-size: 10px; color: var(--text-3); padding: 1px 3px;
+  opacity: 0; border-radius: 3px;
+  transition: all var(--trans);
+}
+.wl-row:hover .wl-rm { opacity: 1; }
+.wl-rm:hover { background: var(--up-dim); color: var(--up); }
 
 /* ── 滾動條 ──────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 5px; height: 5px; }

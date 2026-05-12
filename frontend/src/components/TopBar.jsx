@@ -14,11 +14,14 @@ const INTERVALS = [
 export default function TopBar({
   symbol, quote, interval,
   onSymbolChange, onIntervalChange,
-  isFavorite, onToggleFavorite,
+  watchlist, onToggleInGroup, onAddGroup,
 }) {
-  const [query,   setQuery]   = useState('')
-  const [results, setResults] = useState([])
-  const [open,    setOpen]    = useState(false)
+  const [query,    setQuery]    = useState('')
+  const [results,  setResults]  = useState([])
+  const [open,     setOpen]     = useState(false)
+  const [favOpen,  setFavOpen]  = useState(false)
+  const [newGroup, setNewGroup] = useState('')
+  const [adding,   setAdding]   = useState(false)
   const timerRef = useRef(null)
 
   const search = useCallback(async (q) => {
@@ -34,13 +37,18 @@ export default function TopBar({
     timerRef.current = setTimeout(() => search(q), 200)
   }
 
-  function pick(s) {
-    onSymbolChange(s.symbol); setQuery(''); setOpen(false)
-  }
+  function pick(s) { onSymbolChange(s.symbol); setQuery(''); setOpen(false) }
 
   const change    = quote?.change     ?? 0
   const changePct = quote?.change_pct ?? 0
-  const colorCls  = change > 0 ? 'up' : change < 0 ? 'down' : 'flat'
+  const cls       = change > 0 ? 'up' : change < 0 ? 'down' : 'flat'
+
+  const isFav = watchlist?.groups?.some(g => g.stocks.includes(symbol)) ?? false
+
+  function submitNewGroup() {
+    const n = newGroup.trim()
+    if (n) { onAddGroup(n); setNewGroup(''); setAdding(false) }
+  }
 
   return (
     <div className="topbar">
@@ -50,7 +58,7 @@ export default function TopBar({
       <div className="search-wrapper">
         <input
           className="search-input"
-          placeholder="輸入股票代碼 / 名稱"
+          placeholder="搜尋股票代碼 / 名稱"
           value={query}
           onChange={handleChange}
           onFocus={() => query && setOpen(results.length > 0)}
@@ -68,25 +76,68 @@ export default function TopBar({
         )}
       </div>
 
-      {/* Quote + Favorite star */}
+      {/* Quote */}
       {quote && (
-        <div className="quote-block">
+        <div className="quote-block" style={{ position:'relative' }}>
           <span className="quote-name">{quote.name || symbol}</span>
-          <span className={`quote-price ${colorCls}`}>
-            {quote.price?.toFixed(2) ?? '--'}
-          </span>
-          <span className={`quote-change ${colorCls}`}>
+          <span className={`quote-price ${cls}`}>{quote.price?.toFixed(2) ?? '--'}</span>
+          <span className={`quote-change ${cls}`}>
             {change >= 0 ? '+' : ''}{change.toFixed(2)}
             &nbsp;({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
           </span>
-          {/* ★ 加入最愛 */}
+
+          {/* ★ 加入自選股 */}
           <button
-            className={`fav-star-btn ${isFavorite ? 'active' : ''}`}
-            onClick={onToggleFavorite}
-            title={isFavorite ? '從我的最愛移除' : '加入我的最愛'}
+            className={`fav-star-btn ${isFav ? 'active' : ''}`}
+            onClick={() => { setFavOpen(p => !p); setAdding(false) }}
+            title="加入 / 管理自選股"
           >
-            {isFavorite ? '★' : '☆'}
+            {isFav ? '★' : '☆'}
           </button>
+
+          {favOpen && (
+            <div className="fav-popup" onMouseLeave={() => { setFavOpen(false); setAdding(false) }}>
+              <div className="fav-popup-title">加入自選股分類</div>
+              {watchlist?.groups?.length === 0 && (
+                <div className="fav-popup-hint">尚無分類，請先新增</div>
+              )}
+              {watchlist?.groups?.map(g => {
+                const has = g.stocks.includes(symbol)
+                return (
+                  <label key={g.id} className="fav-popup-row">
+                    <input
+                      type="checkbox"
+                      checked={has}
+                      onChange={() => onToggleInGroup(symbol, g.id)}
+                    />
+                    <span>{g.name}</span>
+                    {has && <span className="fav-check">✓</span>}
+                  </label>
+                )
+              })}
+              <div className="fav-popup-sep" />
+              {adding ? (
+                <div className="fav-popup-add">
+                  <input
+                    className="wl-input"
+                    value={newGroup}
+                    onChange={e => setNewGroup(e.target.value)}
+                    placeholder="新分類名稱…"
+                    autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Enter')  submitNewGroup()
+                      if (e.key === 'Escape') setAdding(false)
+                    }}
+                  />
+                  <button className="wl-ok" onClick={submitNewGroup}>✓</button>
+                </div>
+              ) : (
+                <button className="fav-new-group" onClick={() => setAdding(true)}>
+                  ＋ 新增分類
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
