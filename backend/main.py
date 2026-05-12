@@ -62,6 +62,78 @@ scan_cache = {
 # ══════════════════════════════════════════════════════════
 #  Trend Template 計算
 # ══════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+#  VCP 偵測（Volatility Contraction Pattern）
+# ══════════════════════════════════════════════════════════
+def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -> dict:
+    """
+    VCP 量化評分（0–5 分）
+    5 項指標各 1 分，>= 4 為強、3 為中、2 為弱
+    """
+    empty = {"score": 0, "label": "", "pivot": 0.0, "dist_pivot": 0.0,
+             "atr_ratio": None, "details": []}
+    if len(df) < 60:
+        return empty
+
+    h = df["High"].values.astype(float)
+    l = df["Low"].values.astype(float)
+    v = df["Volume"].values.astype(float)
+
+    score   = 0
+    details = []
+
+    # 1. 高位整理：股價在 MA50 以上且距52週高點 < 25%
+    near_high = cur_close >= ma50 and cur_close >= high52 * 0.75
+    if near_high:
+        score += 1
+        details.append("高位整理")
+
+    # 2. 波動收縮：ATR(20) / ATR(60) < 0.80
+    atr20 = float(np.mean(h[-20:] - l[-20:])) if len(h) >= 20 else 0.0
+    atr60 = float(np.mean(h[-60:] - l[-60:])) if len(h) >= 60 else atr20
+    atr_ratio = round(atr20 / atr60, 2) if atr60 > 0 else 1.0
+    if atr60 > 0 and atr_ratio < 0.80:
+        score += 1
+        details.append(f"波動收縮 ({atr_ratio})")
+
+    # 3. 量能萎縮：近20日均量 < 近50日均量 × 0.75
+    vol20 = float(np.mean(v[-20:])) if len(v) >= 20 else 0.0
+    vol50 = float(np.mean(v[-50:])) if len(v) >= 50 else vol20
+    if vol50 > 0 and vol20 / vol50 < 0.75:
+        score += 1
+        details.append("量能萎縮")
+
+    # 4. 近10日緊密整理：(最高 - 最低) / 收盤 < 8%
+    if len(h) >= 10:
+        tight = (float(max(h[-10:])) - float(min(l[-10:]))) / cur_close
+        if tight < 0.08:
+            score += 1
+            details.append(f"緊密整理 ({tight*100:.1f}%)")
+
+    # 5. 合理回檔深度：近30日高低差 3%–15%（有收縮空間但未崩跌）
+    if len(h) >= 30:
+        pb = (float(max(h[-30:])) - float(min(l[-30:]))) / float(max(h[-30:]))
+        if 0.03 < pb < 0.15:
+            score += 1
+            details.append(f"健康回檔 ({pb*100:.1f}%)")
+
+    # Pivot Point = 近20日最高點
+    pivot     = round(float(max(h[-20:])) if len(h) >= 20 else cur_close, 2)
+    dist_piv  = round((pivot - cur_close) / pivot * 100, 1)
+    label     = ("VCP強" if score >= 4 else
+                 "VCP中" if score >= 3 else
+                 "VCP弱" if score >= 2 else "")
+
+    return {
+        "score":      score,
+        "label":      label,
+        "pivot":      pivot,
+        "dist_pivot": dist_piv,   # 正數=距突破點%，負數=已突破
+        "atr_ratio":  atr_ratio,
+        "details":    details,
+    }
+
+
 def _calc_rs_raw(close: pd.Series) -> float:
     """計算未排名的 RS 原始分數（Minervini 加權公式）"""
     def ret(days):
@@ -107,6 +179,7 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
     }
     passed = sum(conds.values())
     rs_raw = _calc_rs_raw(close)
+    vcp    = detect_vcp(df, c, m50, high52)
 
     return {
         "symbol":    code,
@@ -120,9 +193,10 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
         "from_high": round((c / high52 - 1) * 100, 1),
         "from_low":  round((c / low52  - 1) * 100, 1),
         "rs_raw":    round(rs_raw, 2),
-        "rs_rating": 0,        # filled after ranking
+        "rs_rating": 0,
         "conditions": conds,
         "passed":    passed,
+        "vcp":       vcp,
     }
 
 

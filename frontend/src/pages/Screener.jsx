@@ -15,27 +15,33 @@ function rsColor(rs) {
   if (rs >= 50) return '#ff9800'
   return '#ef5350'
 }
-
 function passedColor(n) {
   if (n === 8) return '#4caf50'
   if (n >= 6)  return '#ffeb3b'
   return '#787b86'
 }
+function vcpColor(score) {
+  if (score >= 4) return { bg: '#1b5e20', color: '#69f0ae', text: 'VCP強' }
+  if (score >= 3) return { bg: '#33691e', color: '#ccff90', text: 'VCP中' }
+  if (score >= 2) return { bg: '#1a237e', color: '#82b1ff', text: 'VCP弱' }
+  return null
+}
 
 export default function Screener({ onSelectStock }) {
-  const [status,    setStatus]    = useState(null)   // null | 'idle' | 'running' | 'done'
+  const [status,    setStatus]    = useState(null)
   const [results,   setResults]   = useState([])
   const [progress,  setProgress]  = useState(0)
   const [total,     setTotal]     = useState(0)
   const [minRS,     setMinRS]     = useState(70)
   const [minPassed, setMinPassed] = useState(6)
+  const [vcpOnly,   setVcpOnly]   = useState(false)
+  const [minVcp,    setMinVcp]    = useState(3)
   const [sortKey,   setSortKey]   = useState('rs_rating')
   const [sortAsc,   setSortAsc]   = useState(false)
   const [market,    setMarket]    = useState(null)
-  const [detail,    setDetail]    = useState(null)   // expanded row
+  const [detail,    setDetail]    = useState(null)
   const pollRef = useRef(null)
 
-  // 載入大盤狀態
   useEffect(() => {
     fetch(`${API_BASE}/api/market/status`)
       .then(r => r.json())
@@ -43,7 +49,6 @@ export default function Screener({ onSelectStock }) {
       .catch(() => {})
   }, [])
 
-  // 輪詢掃描進度
   function startPoll() {
     clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
@@ -64,8 +69,7 @@ export default function Screener({ onSelectStock }) {
   async function handleScan() {
     setResults([])
     setDetail(null)
-    const r = await fetch(`${API_BASE}/api/screener/start`, { method: 'POST' })
-    const d = await r.json()
+    await fetch(`${API_BASE}/api/screener/start`, { method: 'POST' })
     setStatus('running')
     startPoll()
   }
@@ -76,9 +80,19 @@ export default function Screener({ onSelectStock }) {
   }
 
   const filtered = results
-    .filter(r => r.rs_rating >= minRS && r.passed >= minPassed)
+    .filter(r => {
+      if (r.rs_rating < minRS)   return false
+      if (r.passed < minPassed)  return false
+      if (vcpOnly && (r.vcp?.score ?? 0) < minVcp) return false
+      return true
+    })
     .sort((a, b) => {
-      const va = a[sortKey] ?? 0, vb = b[sortKey] ?? 0
+      let va, vb
+      if (sortKey === 'vcp') {
+        va = a.vcp?.score ?? 0; vb = b.vcp?.score ?? 0
+      } else {
+        va = a[sortKey] ?? 0; vb = b[sortKey] ?? 0
+      }
       return sortAsc ? va - vb : vb - va
     })
 
@@ -86,7 +100,7 @@ export default function Screener({ onSelectStock }) {
     const active = sortKey === k
     return (
       <th className="sortable" onClick={() => handleSort(k)}>
-        {label} {active ? (sortAsc ? '↑' : '↓') : ''}
+        {label}{active ? (sortAsc ? ' ↑' : ' ↓') : ''}
       </th>
     )
   }
@@ -109,8 +123,8 @@ export default function Screener({ onSelectStock }) {
               market.trend === '多頭' ? 'badge-green' :
               market.trend === '空頭' ? 'badge-red' : 'badge-yellow'
             }`}>{market.trend}</span>
-            <span className="board-item" style={{ color: '#b2b5be' }}>
-              建議倉位：<strong style={{ color: '#e0e3eb' }}>{market.suggestion}</strong>
+            <span className="board-item">
+              建議：<strong style={{ color: '#e0e3eb' }}>{market.suggestion}</strong>
             </span>
           </>
         ) : (
@@ -127,32 +141,49 @@ export default function Screener({ onSelectStock }) {
         >
           {status === 'running'
             ? `掃描中… ${progress}/${total}`
-            : status === 'done'
-            ? '重新掃描'
-            : '開始掃描'}
+            : status === 'done' ? '重新掃描' : '開始掃描'}
         </button>
 
         {status === 'running' && (
           <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{ width: total ? `${progress / total * 100}%` : '0%' }}
-            />
+            <div className="progress-fill"
+              style={{ width: total ? `${progress / total * 100}%` : '0%' }} />
           </div>
         )}
 
         <label className="filter-label">
-          RS &ge;
+          RS ≥
           <select value={minRS} onChange={e => setMinRS(+e.target.value)}>
-            {[50, 60, 70, 80, 90].map(v => <option key={v}>{v}</option>)}
+            {[50,60,70,80,90].map(v => <option key={v}>{v}</option>)}
           </select>
         </label>
+
         <label className="filter-label">
-          條件 &ge;
+          條件 ≥
           <select value={minPassed} onChange={e => setMinPassed(+e.target.value)}>
             {[4,5,6,7,8].map(v => <option key={v}>{v}</option>)}
           </select>
         </label>
+
+        {/* VCP 篩選 */}
+        <label className="filter-label vcp-toggle">
+          <input
+            type="checkbox"
+            checked={vcpOnly}
+            onChange={e => setVcpOnly(e.target.checked)}
+          />
+          只顯示 VCP ≥
+          <select
+            value={minVcp}
+            onChange={e => setMinVcp(+e.target.value)}
+            disabled={!vcpOnly}
+          >
+            <option value={2}>弱(2)</option>
+            <option value={3}>中(3)</option>
+            <option value={4}>強(4)</option>
+          </select>
+        </label>
+
         {status === 'done' && (
           <span className="result-count">符合：{filtered.length} 檔</span>
         )}
@@ -161,8 +192,8 @@ export default function Screener({ onSelectStock }) {
       {/* ── 說明 ── */}
       {!status && (
         <div className="screener-hint">
-          點擊「開始掃描」，系統將依 Mark Minervini SEPA Trend Template
-          對台股約 {Object.keys([]).length || 60} 檔股票進行篩選（約需 1–2 分鐘）。
+          點擊「開始掃描」，系統將依 Minervini SEPA Trend Template + VCP
+          對台股約 60 檔進行篩選（約需 1–2 分鐘）。
         </div>
       )}
 
@@ -175,68 +206,127 @@ export default function Screener({ onSelectStock }) {
                 <th>代碼</th>
                 <th>名稱</th>
                 <SortTh k="close"     label="收盤" />
-                <SortTh k="rs_rating" label="RS評分" />
+                <SortTh k="rs_rating" label="RS" />
                 <SortTh k="passed"    label="條件" />
-                <SortTh k="from_high" label="距高點%" />
-                <SortTh k="from_low"  label="距低點%" />
+                <SortTh k="vcp"       label="VCP" />
+                <th>樞紐點</th>
+                <SortTh k="from_high" label="距高%" />
                 <th>詳情</th>
                 <th>看圖</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(row => (
-                <>
-                  <tr key={row.symbol} className="data-row">
-                    <td className="sym">{row.symbol}</td>
-                    <td>{row.name}</td>
-                    <td>{row.close}</td>
-                    <td>
-                      <span className="rs-badge" style={{ background: rsColor(row.rs_rating) }}>
-                        {row.rs_rating}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="pass-badge" style={{ color: passedColor(row.passed) }}>
-                        {row.passed}/8
-                      </span>
-                    </td>
-                    <td className={row.from_high >= -10 ? 'up' : ''}>{row.from_high}%</td>
-                    <td className="up">{row.from_low > 30 ? `+${row.from_low}` : row.from_low}%</td>
-                    <td>
-                      <button
-                        className="detail-btn"
-                        onClick={() => setDetail(detail === row.symbol ? null : row.symbol)}
-                      >
-                        {detail === row.symbol ? '收起' : '展開'}
-                      </button>
-                    </td>
-                    <td>
-                      <button className="chart-link-btn" onClick={() => onSelectStock(row.symbol)}>
-                        看圖 →
-                      </button>
-                    </td>
-                  </tr>
-                  {detail === row.symbol && (
-                    <tr key={`${row.symbol}-detail`} className="detail-row">
-                      <td colSpan={9}>
-                        <div className="detail-grid">
-                          {CONDITIONS.map(k => (
-                            <div key={k} className={`cond-item ${row.conditions[k] ? 'pass' : 'fail'}`}>
-                              <span className="cond-icon">{row.conditions[k] ? '✓' : '✗'}</span>
-                              {COND_LABEL[k]}
-                            </div>
-                          ))}
-                          <div className="cond-item info">MA50: {row.ma50}</div>
-                          <div className="cond-item info">MA150: {row.ma150}</div>
-                          <div className="cond-item info">MA200: {row.ma200}</div>
-                          <div className="cond-item info">52w高: {row.high52}</div>
-                          <div className="cond-item info">52w低: {row.low52}</div>
-                        </div>
+              {filtered.map(row => {
+                const vcp  = row.vcp ?? {}
+                const vcpC = vcpColor(vcp.score ?? 0)
+                return (
+                  <>
+                    <tr key={row.symbol} className="data-row">
+                      <td className="sym">{row.symbol}</td>
+                      <td>{row.name}</td>
+                      <td>{row.close}</td>
+                      <td>
+                        <span className="rs-badge" style={{ background: rsColor(row.rs_rating) }}>
+                          {row.rs_rating}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="pass-badge" style={{ color: passedColor(row.passed) }}>
+                          {row.passed}/8
+                        </span>
+                      </td>
+
+                      {/* VCP 評分 */}
+                      <td>
+                        {vcpC ? (
+                          <span className="vcp-badge"
+                            style={{ background: vcpC.bg, color: vcpC.color }}>
+                            {vcpC.text} {vcp.score}/5
+                          </span>
+                        ) : (
+                          <span style={{ color: '#5d6673' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* 樞紐點 & 距離 */}
+                      <td>
+                        {vcp.pivot ? (
+                          <span style={{ fontSize: 12 }}>
+                            {vcp.pivot}
+                            <span style={{
+                              color: vcp.dist_pivot <= 2 ? '#69f0ae' :
+                                     vcp.dist_pivot <= 5 ? '#ffeb3b' : '#787b86',
+                              marginLeft: 4,
+                            }}>
+                              {vcp.dist_pivot <= 0
+                                ? '▲突破'
+                                : `距${vcp.dist_pivot}%`}
+                            </span>
+                          </span>
+                        ) : '—'}
+                      </td>
+
+                      <td className={row.from_high >= -10 ? 'up' : ''}>
+                        {row.from_high}%
+                      </td>
+
+                      <td>
+                        <button className="detail-btn"
+                          onClick={() => setDetail(detail === row.symbol ? null : row.symbol)}>
+                          {detail === row.symbol ? '收起' : '展開'}
+                        </button>
+                      </td>
+                      <td>
+                        <button className="chart-link-btn"
+                          onClick={() => onSelectStock(row.symbol)}>
+                          看圖 →
+                        </button>
                       </td>
                     </tr>
-                  )}
-                </>
-              ))}
+
+                    {detail === row.symbol && (
+                      <tr key={`${row.symbol}-det`} className="detail-row">
+                        <td colSpan={10}>
+                          <div className="detail-grid">
+                            {/* Trend Template 條件 */}
+                            {CONDITIONS.map(k => (
+                              <div key={k} className={`cond-item ${row.conditions[k] ? 'pass' : 'fail'}`}>
+                                <span className="cond-icon">{row.conditions[k] ? '✓' : '✗'}</span>
+                                {COND_LABEL[k]}
+                              </div>
+                            ))}
+                            <div className="cond-item info">MA50: {row.ma50}</div>
+                            <div className="cond-item info">MA150: {row.ma150}</div>
+                            <div className="cond-item info">MA200: {row.ma200}</div>
+                            <div className="cond-item info">52w高: {row.high52}</div>
+                            <div className="cond-item info">52w低: {row.low52}</div>
+
+                            {/* VCP 詳情 */}
+                            {vcp.score > 0 && (
+                              <div className="vcp-detail-block">
+                                <div className="vcp-detail-title">VCP 分析</div>
+                                <div className="vcp-detail-items">
+                                  {(vcp.details || []).map((d, i) => (
+                                    <div key={i} className="cond-item pass">✓ {d}</div>
+                                  ))}
+                                  {vcp.atr_ratio != null && (
+                                    <div className="cond-item info">
+                                      ATR比值: {vcp.atr_ratio}（&lt;0.8 = 波動收縮）
+                                    </div>
+                                  )}
+                                  <div className="cond-item info">
+                                    樞紐點: {vcp.pivot}（距 {vcp.dist_pivot}%）
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
             </tbody>
           </table>
         </div>
