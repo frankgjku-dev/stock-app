@@ -54,9 +54,16 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
   function toData(x, y) {
     const { chart, series } = S.current
     if (!chart || !series.candle) return null
-    const time  = chart.timeScale().coordinateToTime(x)
+    let time = chart.timeScale().coordinateToTime(x)
+    // coordinateToTime returns null in the right margin (past last bar).
+    // Fall back to the last visible time so drawing still works there.
+    if (time == null) {
+      const range = chart.timeScale().getVisibleRange()
+      if (!range) return null
+      time = range.to
+    }
     const price = series.candle.coordinateToPrice(y)
-    return (time != null && price != null) ? { time, price: Number(price) } : null
+    return price != null ? { time, price: Number(price) } : null
   }
 
   function toPixel(price, time) {
@@ -64,16 +71,23 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     if (!chart || !series.candle) return null
     const x = chart.timeScale().timeToCoordinate(time)
     const y = series.candle.priceToCoordinate(price)
+    // Allow null x (bar scrolled out of view) — caller handles it
     return (x != null && y != null) ? { x, y } : null
   }
 
   /* ── canvas resize ────────────────────────────── */
+  const dpr = window.devicePixelRatio || 1
+
   function syncCanvas() {
     const el = canvasRef.current
     const ct = containerRef.current
     if (!el || !ct) return
-    el.width  = ct.clientWidth
-    el.height = ct.clientHeight
+    el.width  = ct.clientWidth  * dpr
+    el.height = ct.clientHeight * dpr
+    el.style.width  = ct.clientWidth  + 'px'
+    el.style.height = ct.clientHeight + 'px'
+    // Scale all canvas operations to match DPR
+    el.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
   /* ── 渲染所有繪圖 ─────────────────────────────── */
@@ -81,18 +95,19 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // Clear using CSS pixel dimensions (transform is already applied by syncCanvas)
+    const W = canvas.width / dpr, H = canvas.height / dpr
+    ctx.clearRect(0, 0, W, H)
     const { drawings, preview, selectedIdx } = S.current
-    drawings.forEach((d, i) => paint(ctx, d, canvas, false, i === selectedIdx))
-    if (preview) paint(ctx, preview, canvas, true, false)
+    drawings.forEach((d, i) => paint(ctx, d, W, H, false, i === selectedIdx))
+    if (preview) paint(ctx, preview, W, H, true, false)
   }
 
-  function paint(ctx, d, canvas, isPreview, selected) {
+  function paint(ctx, d, W, H, isPreview, selected) {
     const { type, pts, color = '#b86e2a' } = d
     if (!pts[0]) return
     const p1 = toPixel(pts[0].price, pts[0].time)
     if (!p1) return
-    const W = canvas.width, H = canvas.height
     const strokeColor = selected ? lighten(color) : color
 
     ctx.save()
