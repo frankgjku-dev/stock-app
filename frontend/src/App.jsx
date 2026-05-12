@@ -5,12 +5,14 @@ import DrawingToolbar from './components/DrawingToolbar'
 import IndicatorBar   from './components/IndicatorBar'
 import Screener   from './pages/Screener'
 import Calculator from './pages/Calculator'
+import Journal    from './pages/Journal'
 import useStockData from './hooks/useStockData'
 
 const TABS = [
   { id: 'chart',      label: 'K線分析' },
   { id: 'screener',   label: '選股 (Minervini)' },
   { id: 'calculator', label: '部位計算機' },
+  { id: 'journal',    label: '交易日誌' },
 ]
 
 export default function App() {
@@ -76,6 +78,7 @@ export default function App() {
 
       {tab === 'screener'   && <Screener   onSelectStock={(s) => { setSymbol(s); setTab('chart') }} />}
       {tab === 'calculator' && <Calculator />}
+      {tab === 'journal'    && <Journal />}
     </div>
   )
 }

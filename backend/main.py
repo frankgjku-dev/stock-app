@@ -178,8 +178,9 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
         "c8": c >= high52 * 0.75,
     }
     passed = sum(conds.values())
-    rs_raw = _calc_rs_raw(close)
-    vcp    = detect_vcp(df, c, m50, high52)
+    rs_raw  = _calc_rs_raw(close)
+    vcp     = detect_vcp(df, c, m50, high52)
+    pp      = detect_pocket_pivot(df)
 
     return {
         "symbol":    code,
@@ -194,10 +195,28 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
         "from_low":  round((c / low52  - 1) * 100, 1),
         "rs_raw":    round(rs_raw, 2),
         "rs_rating": 0,
-        "conditions": conds,
-        "passed":    passed,
-        "vcp":       vcp,
+        "conditions":     conds,
+        "passed":         passed,
+        "vcp":            vcp,
+        "pocket_pivot":   pp,
     }
+
+
+def detect_pocket_pivot(df: pd.DataFrame) -> bool:
+    """
+    Pocket Pivot：今日收紅K，且今日量 > 過去10日所有黑K中的最大量
+    """
+    if len(df) < 12:
+        return False
+    today = df.iloc[-1]
+    if float(today["Close"]) <= float(today["Open"]):
+        return False          # 今日非紅K
+    past10    = df.iloc[-11:-1]
+    down_days = past10[past10["Close"] < past10["Open"]]
+    if down_days.empty:
+        return True           # 近10日無黑K，非常強勢
+    max_down_vol = float(down_days["Volume"].max())
+    return float(today["Volume"]) > max_down_vol
 
 
 def _fetch_df(code: str) -> pd.DataFrame | None:

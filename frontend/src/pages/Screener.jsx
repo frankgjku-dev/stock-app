@@ -3,10 +3,18 @@ import { API_BASE } from '../config'
 
 const CONDITIONS = ['c1','c2','c3','c4','c5','c6','c7','c8']
 const COND_LABEL = {
-  c1: '股價>MA150', c2: '股價>MA200', c3: 'MA150>MA200',
-  c4: 'MA200向上',  c5: 'MA50>MA150,200', c6: '股價>MA50',
-  c7: '距低點+30%', c8: '距高點75%內',
+  c1: '股價 > MA150', c2: '股價 > MA200', c3: 'MA150 > MA200',
+  c4: 'MA200 趨勢向上', c5: 'MA50 > MA150 & MA200', c6: '股價 > MA50',
+  c7: '距52週低點 ≥+30%', c8: '距52週高點 ≤25%',
 }
+
+const METHOD_PILLS = [
+  { label: 'Trend Template',   desc: '8大條件全通過才算合格', color: '#1565c0' },
+  { label: 'RS 評分 0–99',     desc: '12個月加權報酬率百分位排名', color: '#2e7d32' },
+  { label: 'VCP 波動收縮',     desc: '5項波動/量能收縮指標', color: '#6a1b9a' },
+  { label: 'Pocket Pivot',     desc: '今日紅K量 > 過去10日黑K最大量', color: '#e65100' },
+  { label: '大盤多空濾網',     desc: '加權指數 MA50/MA200 + 散佈日計數', color: '#37474f' },
+]
 
 function rsColor(rs) {
   if (rs >= 90) return '#4caf50'
@@ -21,9 +29,9 @@ function passedColor(n) {
   return '#787b86'
 }
 function vcpColor(score) {
-  if (score >= 4) return { bg: '#1b5e20', color: '#69f0ae', text: 'VCP強' }
-  if (score >= 3) return { bg: '#33691e', color: '#ccff90', text: 'VCP中' }
-  if (score >= 2) return { bg: '#1a237e', color: '#82b1ff', text: 'VCP弱' }
+  if (score >= 4) return { bg: '#1b5e20', color: '#69f0ae' }
+  if (score >= 3) return { bg: '#33691e', color: '#ccff90' }
+  if (score >= 2) return { bg: '#1a237e', color: '#82b1ff' }
   return null
 }
 
@@ -36,42 +44,36 @@ export default function Screener({ onSelectStock }) {
   const [minPassed, setMinPassed] = useState(6)
   const [vcpOnly,   setVcpOnly]   = useState(false)
   const [minVcp,    setMinVcp]    = useState(3)
+  const [ppOnly,    setPpOnly]    = useState(false)
   const [sortKey,   setSortKey]   = useState('rs_rating')
   const [sortAsc,   setSortAsc]   = useState(false)
   const [market,    setMarket]    = useState(null)
   const [detail,    setDetail]    = useState(null)
+  const [showMethod, setShowMethod] = useState(true)
   const pollRef = useRef(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/api/market/status`)
-      .then(r => r.json())
-      .then(d => !d.error && setMarket(d))
-      .catch(() => {})
+      .then(r => r.json()).then(d => !d.error && setMarket(d)).catch(() => {})
   }, [])
 
   function startPoll() {
     clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
-      const r = await fetch(`${API_BASE}/api/screener/status`)
-      const d = await r.json()
-      setStatus(d.status)
-      setProgress(d.progress)
-      setTotal(d.total)
+      const d = await fetch(`${API_BASE}/api/screener/status`).then(r => r.json())
+      setStatus(d.status); setProgress(d.progress); setTotal(d.total)
       if (d.status === 'done' || d.status === 'error') {
         clearInterval(pollRef.current)
         setResults(d.results || [])
       }
     }, 1500)
   }
-
   useEffect(() => () => clearInterval(pollRef.current), [])
 
   async function handleScan() {
-    setResults([])
-    setDetail(null)
+    setResults([]); setDetail(null)
     await fetch(`${API_BASE}/api/screener/start`, { method: 'POST' })
-    setStatus('running')
-    startPoll()
+    setStatus('running'); startPoll()
   }
 
   function handleSort(key) {
@@ -79,34 +81,53 @@ export default function Screener({ onSelectStock }) {
     else { setSortKey(key); setSortAsc(false) }
   }
 
-  const filtered = results
-    .filter(r => {
-      if (r.rs_rating < minRS)   return false
-      if (r.passed < minPassed)  return false
-      if (vcpOnly && (r.vcp?.score ?? 0) < minVcp) return false
-      return true
-    })
-    .sort((a, b) => {
-      let va, vb
-      if (sortKey === 'vcp') {
-        va = a.vcp?.score ?? 0; vb = b.vcp?.score ?? 0
-      } else {
-        va = a[sortKey] ?? 0; vb = b[sortKey] ?? 0
-      }
-      return sortAsc ? va - vb : vb - va
-    })
+  const filtered = results.filter(r => {
+    if (r.rs_rating < minRS)  return false
+    if (r.passed < minPassed) return false
+    if (vcpOnly && (r.vcp?.score ?? 0) < minVcp) return false
+    if (ppOnly  && !r.pocket_pivot) return false
+    return true
+  }).sort((a, b) => {
+    const va = sortKey === 'vcp' ? (a.vcp?.score ?? 0) : (a[sortKey] ?? 0)
+    const vb = sortKey === 'vcp' ? (b.vcp?.score ?? 0) : (b[sortKey] ?? 0)
+    return sortAsc ? va - vb : vb - va
+  })
 
   function SortTh({ k, label }) {
-    const active = sortKey === k
     return (
       <th className="sortable" onClick={() => handleSort(k)}>
-        {label}{active ? (sortAsc ? ' ↑' : ' ↓') : ''}
+        {label}{sortKey === k ? (sortAsc ? ' ↑' : ' ↓') : ''}
       </th>
     )
   }
 
   return (
     <div className="screener-page">
+
+      {/* ── 篩選方式說明 ── */}
+      <div className="method-card">
+        <div className="method-header" onClick={() => setShowMethod(p => !p)}>
+          <span className="method-title">📋 篩選方式說明</span>
+          <span className="method-toggle">{showMethod ? '▲ 收起' : '▼ 展開'}</span>
+        </div>
+        {showMethod && (
+          <div className="method-pills">
+            {METHOD_PILLS.map(p => (
+              <div key={p.label} className="method-pill" style={{ borderColor: p.color }}>
+                <span className="method-pill-label" style={{ color: p.color }}>{p.label}</span>
+                <span className="method-pill-desc">{p.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {showMethod && (
+          <div className="method-note">
+            ℹ️ 依 Minervini《超級績效》SEPA 方法論：先通過 Trend Template 確認 Stage 2 上升趨勢，
+            再以 RS 評分篩出強勢股，最後用 VCP / Pocket Pivot 找最佳進場時機。
+            大盤需在多頭環境（MA50 之上，散佈日 &lt; 5）才適合做多。
+          </div>
+        )}
+      </div>
 
       {/* ── 大盤看板 ── */}
       <div className="market-board">
@@ -124,23 +145,19 @@ export default function Screener({ onSelectStock }) {
               market.trend === '空頭' ? 'badge-red' : 'badge-yellow'
             }`}>{market.trend}</span>
             <span className="board-item">
-              建議：<strong style={{ color: '#e0e3eb' }}>{market.suggestion}</strong>
+              建議倉位：<strong style={{ color: '#e0e3eb' }}>{market.suggestion}</strong>
             </span>
           </>
-        ) : (
-          <span className="board-item" style={{ color: '#787b86' }}>載入中…</span>
-        )}
+        ) : <span className="board-item" style={{ color: '#787b86' }}>載入中…</span>}
       </div>
 
       {/* ── 控制列 ── */}
       <div className="screener-controls">
         <button
           className={`scan-btn ${status === 'running' ? 'scanning' : ''}`}
-          onClick={handleScan}
-          disabled={status === 'running'}
+          onClick={handleScan} disabled={status === 'running'}
         >
-          {status === 'running'
-            ? `掃描中… ${progress}/${total}`
+          {status === 'running' ? `掃描中… ${progress}/${total}`
             : status === 'done' ? '重新掃描' : '開始掃描'}
         </button>
 
@@ -151,49 +168,35 @@ export default function Screener({ onSelectStock }) {
           </div>
         )}
 
-        <label className="filter-label">
-          RS ≥
+        <label className="filter-label">RS ≥
           <select value={minRS} onChange={e => setMinRS(+e.target.value)}>
             {[50,60,70,80,90].map(v => <option key={v}>{v}</option>)}
           </select>
         </label>
-
-        <label className="filter-label">
-          條件 ≥
+        <label className="filter-label">條件 ≥
           <select value={minPassed} onChange={e => setMinPassed(+e.target.value)}>
             {[4,5,6,7,8].map(v => <option key={v}>{v}</option>)}
           </select>
         </label>
-
-        {/* VCP 篩選 */}
         <label className="filter-label vcp-toggle">
-          <input
-            type="checkbox"
-            checked={vcpOnly}
-            onChange={e => setVcpOnly(e.target.checked)}
-          />
-          只顯示 VCP ≥
-          <select
-            value={minVcp}
-            onChange={e => setMinVcp(+e.target.value)}
-            disabled={!vcpOnly}
-          >
+          <input type="checkbox" checked={vcpOnly} onChange={e => setVcpOnly(e.target.checked)} />
+          VCP ≥
+          <select value={minVcp} onChange={e => setMinVcp(+e.target.value)} disabled={!vcpOnly}>
             <option value={2}>弱(2)</option>
             <option value={3}>中(3)</option>
             <option value={4}>強(4)</option>
           </select>
         </label>
-
-        {status === 'done' && (
-          <span className="result-count">符合：{filtered.length} 檔</span>
-        )}
+        <label className="filter-label vcp-toggle">
+          <input type="checkbox" checked={ppOnly} onChange={e => setPpOnly(e.target.checked)} />
+          只顯示 Pocket Pivot
+        </label>
+        {status === 'done' && <span className="result-count">符合：{filtered.length} 檔</span>}
       </div>
 
-      {/* ── 說明 ── */}
       {!status && (
         <div className="screener-hint">
-          點擊「開始掃描」，系統將依 Minervini SEPA Trend Template + VCP
-          對台股約 60 檔進行篩選（約需 1–2 分鐘）。
+          點擊「開始掃描」，系統將對台股約 60 檔進行 Minervini SEPA 篩選（約需 1–2 分鐘）。
         </div>
       )}
 
@@ -203,22 +206,21 @@ export default function Screener({ onSelectStock }) {
           <table className="screener-table">
             <thead>
               <tr>
-                <th>代碼</th>
-                <th>名稱</th>
+                <th>代碼</th><th>名稱</th>
                 <SortTh k="close"     label="收盤" />
                 <SortTh k="rs_rating" label="RS" />
                 <SortTh k="passed"    label="條件" />
                 <SortTh k="vcp"       label="VCP" />
                 <th>樞紐點</th>
+                <th>Pocket<br/>Pivot</th>
                 <SortTh k="from_high" label="距高%" />
-                <th>詳情</th>
-                <th>看圖</th>
+                <th>詳情</th><th>看圖</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(row => {
-                const vcp  = row.vcp ?? {}
-                const vcpC = vcpColor(vcp.score ?? 0)
+                const vcp = row.vcp ?? {}
+                const vc  = vcpColor(vcp.score ?? 0)
                 return (
                   <>
                     <tr key={row.symbol} className="data-row">
@@ -235,41 +237,28 @@ export default function Screener({ onSelectStock }) {
                           {row.passed}/8
                         </span>
                       </td>
-
-                      {/* VCP 評分 */}
                       <td>
-                        {vcpC ? (
-                          <span className="vcp-badge"
-                            style={{ background: vcpC.bg, color: vcpC.color }}>
-                            {vcpC.text} {vcp.score}/5
-                          </span>
-                        ) : (
-                          <span style={{ color: '#5d6673' }}>—</span>
-                        )}
-                      </td>
-
-                      {/* 樞紐點 & 距離 */}
-                      <td>
-                        {vcp.pivot ? (
-                          <span style={{ fontSize: 12 }}>
-                            {vcp.pivot}
-                            <span style={{
-                              color: vcp.dist_pivot <= 2 ? '#69f0ae' :
-                                     vcp.dist_pivot <= 5 ? '#ffeb3b' : '#787b86',
-                              marginLeft: 4,
-                            }}>
-                              {vcp.dist_pivot <= 0
-                                ? '▲突破'
-                                : `距${vcp.dist_pivot}%`}
+                        {vc
+                          ? <span className="vcp-badge" style={{ background: vc.bg, color: vc.color }}>
+                              {vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱'} {vcp.score}/5
                             </span>
-                          </span>
-                        ) : '—'}
+                          : <span style={{ color: '#5d6673' }}>—</span>}
                       </td>
-
-                      <td className={row.from_high >= -10 ? 'up' : ''}>
-                        {row.from_high}%
+                      <td style={{ fontSize: 12 }}>
+                        {vcp.pivot
+                          ? <>{vcp.pivot} <span style={{
+                              color: vcp.dist_pivot <= 2 ? '#69f0ae' :
+                                     vcp.dist_pivot <= 5 ? '#ffeb3b' : '#787b86'
+                            }}>{vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}</span>
+                            </>
+                          : '—'}
                       </td>
-
+                      <td>
+                        {row.pocket_pivot
+                          ? <span className="pp-badge">🚀 PP</span>
+                          : <span style={{ color: '#5d6673' }}>—</span>}
+                      </td>
+                      <td className={row.from_high >= -10 ? 'up' : ''}>{row.from_high}%</td>
                       <td>
                         <button className="detail-btn"
                           onClick={() => setDetail(detail === row.symbol ? null : row.symbol)}>
@@ -277,8 +266,7 @@ export default function Screener({ onSelectStock }) {
                         </button>
                       </td>
                       <td>
-                        <button className="chart-link-btn"
-                          onClick={() => onSelectStock(row.symbol)}>
+                        <button className="chart-link-btn" onClick={() => onSelectStock(row.symbol)}>
                           看圖 →
                         </button>
                       </td>
@@ -286,9 +274,8 @@ export default function Screener({ onSelectStock }) {
 
                     {detail === row.symbol && (
                       <tr key={`${row.symbol}-det`} className="detail-row">
-                        <td colSpan={10}>
+                        <td colSpan={11}>
                           <div className="detail-grid">
-                            {/* Trend Template 條件 */}
                             {CONDITIONS.map(k => (
                               <div key={k} className={`cond-item ${row.conditions[k] ? 'pass' : 'fail'}`}>
                                 <span className="cond-icon">{row.conditions[k] ? '✓' : '✗'}</span>
@@ -300,24 +287,21 @@ export default function Screener({ onSelectStock }) {
                             <div className="cond-item info">MA200: {row.ma200}</div>
                             <div className="cond-item info">52w高: {row.high52}</div>
                             <div className="cond-item info">52w低: {row.low52}</div>
-
-                            {/* VCP 詳情 */}
                             {vcp.score > 0 && (
                               <div className="vcp-detail-block">
                                 <div className="vcp-detail-title">VCP 分析</div>
                                 <div className="vcp-detail-items">
-                                  {(vcp.details || []).map((d, i) => (
-                                    <div key={i} className="cond-item pass">✓ {d}</div>
-                                  ))}
-                                  {vcp.atr_ratio != null && (
-                                    <div className="cond-item info">
-                                      ATR比值: {vcp.atr_ratio}（&lt;0.8 = 波動收縮）
-                                    </div>
-                                  )}
-                                  <div className="cond-item info">
-                                    樞紐點: {vcp.pivot}（距 {vcp.dist_pivot}%）
-                                  </div>
+                                  {(vcp.details || []).map((d, i) =>
+                                    <div key={i} className="cond-item pass">✓ {d}</div>)}
+                                  {vcp.atr_ratio != null &&
+                                    <div className="cond-item info">ATR比值: {vcp.atr_ratio}（&lt;0.8=收縮）</div>}
+                                  <div className="cond-item info">樞紐點: {vcp.pivot}（距 {vcp.dist_pivot}%）</div>
                                 </div>
+                              </div>
+                            )}
+                            {row.pocket_pivot && (
+                              <div className="cond-item pass" style={{ width: '100%' }}>
+                                🚀 Pocket Pivot 訊號：今日紅K量已超過過去10日所有黑K的最大量
                               </div>
                             )}
                           </div>
