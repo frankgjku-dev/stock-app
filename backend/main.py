@@ -139,9 +139,13 @@ def _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100, window=5, min_dep
 
 def _best_contraction_sequence(pullbacks):
     """
-    從回檔清單中找「深度遞減」的最長子序列。
-    Minervini 核心規則：每次回檔深度大約減半（≈50%），例如 25%→12%→6%。
-    序列納入標準：後一次深度 ≤ 前一次 × 0.90（允許 10% 誤差，確保方向正確）。
+    從回檔清單中找「深度遞減 + 低點墊高」的最長子序列。
+
+    Minervini 兩大硬條件：
+    1. 深度遞減：後一次深度 ≤ 前一次 × 0.90（大約減半方向正確）
+    2. 低點墊高：後一次低點（trough）必須 >= 前一次低點 × 0.98（允許 2% 容差）
+
+    兩個條件同時滿足才納入序列。
     """
     if not pullbacks:
         return []
@@ -150,9 +154,12 @@ def _best_contraction_sequence(pullbacks):
     for start in range(len(recent)):
         seq = [recent[start]]
         for j in range(start + 1, len(recent)):
-            # 後一次回檔不得超過前一次的 90%（必須有縮小趨勢）
-            if recent[j]["depth_pct"] <= seq[-1]["depth_pct"] * 0.90:
-                seq.append(recent[j])
+            prev = seq[-1]
+            cur  = recent[j]
+            depth_ok  = cur["depth_pct"] <= prev["depth_pct"] * 0.90   # 深度縮小
+            trough_ok = cur["trough"]    >= prev["trough"]    * 0.98   # 低點不得更低
+            if depth_ok and trough_ok:
+                seq.append(cur)
         if len(seq) > len(best):
             best = seq
     return best
@@ -208,11 +215,11 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         base_days = int(vcp_seq[-1]["trough_idx"] - vcp_seq[0]["peak_idx"])
     base_valid = 15 <= base_days <= 65
 
-    # ── 低點墊高（Higher Lows）────────────────────────────────
+    # ── 低點墊高（已在序列建構時強制執行，這裡做確認記錄）──────
     higher_lows = False
     if num_cont >= 2:
         troughs = [pb["trough"] for pb in vcp_seq]
-        higher_lows = all(troughs[i] >= troughs[i-1] * 0.97
+        higher_lows = all(troughs[i] >= troughs[i-1] * 0.98
                           for i in range(1, len(troughs)))
 
     # ── ATR ───────────────────────────────────────────────────
@@ -266,8 +273,8 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
             struct +=  7; details.append(f"回檔遞減良好({'>'.join(str(d)+'%' for d in depths)})")
         elif strict_dec:
             struct +=  4; details.append(f"回檔遞減({'>'.join(str(d)+'%' for d in depths)})")
-    if higher_lows:                                   # 低點墊高：6分
-        struct += 6; details.append("低點墊高")
+    if higher_lows:                                   # 低點墊高（硬條件已通過）：6分
+        struct += 6; details.append("低點墊高 ✓")
     if last_depth < 8:                                # 最後收縮深度：6分
         struct += 6; details.append(f"末段收縮{last_depth:.1f}%(<8%理想)")
     elif last_depth < 10:
@@ -294,9 +301,11 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
 
     vol_contracting = vol_second_half_lt_first
 
-    # ══ Pivot Point（最後收縮的高點）════════════════════════════
+    # ══ Pivot Point = 整個整理區的最高點 ════════════════════════
+    # Minervini 定義：整理區所有局部高點中的最高值即為「基準點」
+    # 只有收盤突破此基準點 +5%（或放量）才算真正突破
     if vcp_seq:
-        pivot = round(vcp_seq[-1]["peak"], 2)
+        pivot = round(max(pb["peak"] for pb in vcp_seq), 2)
     else:
         ph_start = max(len(h) - 45, 0)
         ph_end   = max(len(h) - 5,  1)
@@ -308,7 +317,7 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     # ── 突破準備（10 分）──────────────────────────────────────
     break_s = 0
     if 0 <= dist_piv <= 3:
-        break_s += 5; details.append(f"距pivot {dist_piv}%")
+        break_s += 5; details.append(f"距基準點 {dist_piv}%")
     elif 0 <= dist_piv <= 5:
         break_s += 3
     if atr_ratio < 0.70:
@@ -327,14 +336,16 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     today_close = float(c_arr[-1])
     vol_today   = float(v[-1])
 
+    # 突破條件：收盤超過基準點 +5%（或放量突破基準點）才算真正突破
+    # 在 0~+5% 區間內屬於「買入窗口」，超過 +5% 不追
     if today_close > pivot * 1.05:
-        buy_status = "過度延伸"
-    elif today_close > pivot and vol50 > 0 and vol_today >= vol50 * 1.5:
-        buy_status = "正式突破"
-    elif today_close > pivot:
-        buy_status = "突破(量不足)"
+        buy_status = "過度延伸"                          # 超過基準點 5%，不追
+    elif today_close >= pivot and vol50 > 0 and vol_today >= vol50 * 1.5:
+        buy_status = "放量突破"                          # 收盤≥基準點 + 量≥50日均量×1.5
+    elif today_close >= pivot:
+        buy_status = "突破(量不足)"                      # 收盤≥基準點但量能不夠
     elif 0 <= dist_piv <= 5 and num_cont >= 2:
-        buy_status = "等待突破"
+        buy_status = "等待突破"                          # 距基準點 0~5%，進場準備區
     elif num_cont >= 2:
         buy_status = "整理中"
     else:
@@ -523,14 +534,14 @@ def generate_recommendation(r: dict) -> dict:
             setup="過度延伸",
         )
 
-    # ── 1. 正式突破（最高優先）──────────────────────────────
-    if buy_status == "正式突破" and contractions >= 2 and rs >= 60:
+    # ── 1. 放量突破基準點（最高優先）────────────────────────
+    if buy_status == "放量突破" and contractions >= 2 and rs >= 60:
         entry = pivot * 1.003
         return make(
-            "buy_now", "🟢 正式突破，可進場", "high",
-            f"放量突破樞紐 {pivot}！{vcp_desc}，RS {rs:.0f}。"
-            f"買入區間 ≤ {round(pivot*1.05,2)}（超過5%不追）。",
-            setup=f"VCP正式突破({vcp_score100}分)",
+            "buy_now", "🟢 放量突破，可進場", "high",
+            f"放量突破基準點 {pivot}！{vcp_desc}，RS {rs:.0f}。"
+            f"買入區間 {pivot}–{round(pivot*1.05,2)}，超過 +5% 不追。",
+            setup=f"VCP放量突破({vcp_score100}分)",
             entry=entry,
         )
 
