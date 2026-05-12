@@ -1,0 +1,210 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #131722;
+  color: #b2b5be;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', sans-serif;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Top Bar ─────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  background: #1e222d;
+  border-bottom: 1px solid #2a2e39;
+  height: 52px;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.logo {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e0e3eb;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.search-input {
+  background: #2a2e39;
+  border: 1px solid #363a45;
+  border-radius: 4px;
+  color: #e0e3eb;
+  padding: 5px 12px;
+  width: 200px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-input:focus { border-color: #2962ff; }
+.search-input::placeholder { color: #5d6673; }
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6);
+  z-index: 100;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+.search-item:hover { background: #2a2e39; }
+.search-symbol { color: #e0e3eb; font-weight: 600; width: 42px; }
+.search-name   { color: #787b86; }
+
+.quote-block {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.quote-name   { font-size: 13px; color: #787b86; }
+.quote-price  { font-size: 22px; font-weight: 700; line-height: 1; }
+.quote-change { font-size: 13px; font-weight: 500; }
+.up   { color: #ef5350; }
+.down { color: #26a69a; }
+.flat { color: #787b86; }
+
+.interval-selector {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.interval-btn {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  padding: 4px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.1s;
+}
+.interval-btn:hover  { background: #2a2e39; color: #e0e3eb; }
+.interval-btn.active { background: #2a2e39; color: #2962ff; font-weight: 600; }
+
+/* ── Layout ──────────────────────────────────────── */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chart-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chart-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Drawing Toolbar (left) ──────────────────────── */
+.drawing-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: #1e222d;
+  border-right: 1px solid #2a2e39;
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.tool-sep {
+  width: 28px;
+  height: 1px;
+  background: #2a2e39;
+  margin: 4px 0;
+}
+
+.tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #787b86;
+  cursor: pointer;
+  font-size: 15px;
+  transition: all 0.1s;
+  position: relative;
+}
+.tool-btn:hover  { background: #2a2e39; color: #e0e3eb; }
+.tool-btn.active { background: #2a2e39; color: #2962ff; }
+
+/* ── Indicator Bar ───────────────────────────────── */
+.indicator-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: #1e222d;
+  border-bottom: 1px solid #2a2e39;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.ind-label { font-size: 11px; color: #5d6673; margin-right: 2px; }
+
+.ma-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.4;
+  border: 1px solid currentColor;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+.ma-badge.active { opacity: 1; }
+
+/* ── Loading ─────────────────────────────────────── */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(19,23,34,.7);
+  z-index: 10;
+  font-size: 14px;
+  color: #787b86;
+  pointer-events: none;
+}

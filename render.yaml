@@ -1,0 +1,31 @@
+services:
+  # ── 後端 FastAPI ──────────────────────────────────────
+  - type: web
+    name: twstock-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+  # ── 前端 React (Static Site) ──────────────────────────
+  - type: web
+    name: twstock-ui
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    plan: free
+    envVars:
+      - key: VITE_API_HOST
+        fromService:
+          name: twstock-api
+          type: web
+          property: host          # e.g. twstock-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
