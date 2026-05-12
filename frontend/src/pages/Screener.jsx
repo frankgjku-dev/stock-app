@@ -96,12 +96,21 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
     else { setSortKey(key); setSortAsc(false) }
   }
 
-  const filtered = results.filter(r => {
+  // 基礎過濾（不含 urgencyFilter，面板與表格共用同一母集）
+  const baseFiltered = results.filter(r => {
     if (r.rs_rating < minRS)  return false
     if (r.passed < minPassed) return false
     if (vcpOnly && (r.vcp?.score ?? 0) < minVcp) return false
     if (ppOnly  && !r.pocket_pivot) return false
     if (favOnly && !allFavSymbols.includes(r.symbol)) return false
+    return true
+  })
+
+  // 高優先面板：從 baseFiltered 取 urgency=high，確保與表格同一母集
+  const highPriority = baseFiltered.filter(r => r.recommendation?.urgency === 'high')
+
+  // 表格：在 baseFiltered 基礎上再套 urgencyFilter
+  const filtered = baseFiltered.filter(r => {
     if (urgencyFilter !== 'all' && r.recommendation?.urgency !== urgencyFilter) return false
     return true
   }).sort((a, b) => {
@@ -115,11 +124,6 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
     const vb = sortKey === 'vcp' ? (b.vcp?.score ?? 0) : (b[sortKey] ?? 0)
     return sortAsc ? va - vb : vb - va
   })
-
-  // 高優先股（建議進場/突破）
-  const highPriority = results.filter(r =>
-    ['high'].includes(r.recommendation?.urgency) && r.rs_rating >= minRS
-  )
 
   function SortTh({ k, label }) {
     return (
@@ -334,8 +338,16 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
         </div>
       )}
 
+      {/* ── 篩選後空白提示 ── */}
+      {results.length > 0 && filtered.length === 0 && (
+        <div className="screener-hint" style={{ color:'var(--text-2)' }}>
+          目前篩選條件下沒有符合的股票。
+          試著降低「RS ≥」或「條件 ≥」門檻，或切換建議篩選為「全部」。
+        </div>
+      )}
+
       {/* ── 結果表格 ── */}
-      {results.length > 0 && (
+      {filtered.length > 0 && (
         <div className="table-wrap">
           <table className="screener-table">
             <thead>
