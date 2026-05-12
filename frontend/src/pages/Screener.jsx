@@ -59,8 +59,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   const [sortKey,   setSortKey]   = useState('rs_rating')
   const [sortAsc,   setSortAsc]   = useState(false)
   const [market,    setMarket]    = useState(null)
-  const [detail,    setDetail]    = useState(null)
-  const [showMethod, setShowMethod] = useState(false)
+  const [detail,      setDetail]      = useState(null)
+  const [showMethod,  setShowMethod]  = useState(false)
+  const [showPriority, setShowPriority] = useState(false)  // 預設收起，不擋表格
   const pollRef = useRef(null)
 
   const allFavSymbols = (watchlist.groups || []).flatMap(g => g.stocks)
@@ -264,77 +265,10 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
         {status === 'done' && <span className="result-count">符合：{filtered.length} 檔</span>}
       </div>
 
-      {/* ── 高優先候選面板 ── */}
-      {highPriority.length > 0 && (
-        <div className="priority-panel">
-          <div className="priority-title">
-            🎯 高優先候選
-            <span className="priority-count">{highPriority.length} 檔</span>
-            <span className="priority-sub">— 可考慮進場 / 即將突破</span>
-          </div>
-          <div className="priority-cards">
-            {highPriority.map(r => {
-              const rec = r.recommendation
-              const sty = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.low
-              return (
-                <div
-                  key={r.symbol}
-                  className="priority-card"
-                  style={{ borderColor: sty.border, background: sty.bg }}
-                >
-                  <div className="pc-header">
-                    <div>
-                      <span className="pc-sym" onClick={() => onSelectStock(r.symbol)}>{r.symbol}</span>
-                      <span className="pc-name">{r.name}</span>
-                    </div>
-                    <span className="pc-action" style={{ color: sty.text }}>{rec?.action_label}</span>
-                  </div>
-
-                  {rec?.entry && (
-                    <div className="pc-levels">
-                      <div className="pc-level">
-                        <span className="pc-lk">進場</span>
-                        <span className="pc-lv" style={{ color:'var(--text-1)' }}>{rec.entry}</span>
-                      </div>
-                      <div className="pc-level">
-                        <span className="pc-lk">停損</span>
-                        <span className="pc-lv" style={{ color:'var(--up)' }}>{rec.stop}</span>
-                      </div>
-                      <div className="pc-level">
-                        <span className="pc-lk">目標</span>
-                        <span className="pc-lv" style={{ color:'var(--down)' }}>{rec.target}</span>
-                      </div>
-                      {rec.rr && (
-                        <div className="pc-level">
-                          <span className="pc-lk">RR</span>
-                          <span className="pc-lv" style={{ color: rec.rr >= 2 ? 'var(--down)' : 'var(--warn)' }}>
-                            1:{rec.rr}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="pc-reason">{rec?.reason}</div>
-
-                  <div className="pc-footer">
-                    <span className="pc-meta">RS {r.rs_rating} · {r.passed}/8 · {rec?.setup_type}</span>
-                    <div style={{ display:'flex', gap:6 }}>
-                      {r.pocket_pivot && <span className="pp-badge">🚀 PP</span>}
-                      <button className="chart-link-btn" onClick={() => onSelectStock(r.symbol)}>看圖 →</button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {!status && (
         <div className="screener-hint">
-          點擊「開始掃描」，系統將對台股約 60 檔進行 Minervini SEPA 篩選，
-          並自動生成進場建議（約需 1–2 分鐘）。
+          點擊「開始掃描」，系統將對台股進行 Minervini SEPA 篩選，
+          並自動生成進場建議（約需 1–3 分鐘）。
         </div>
       )}
 
@@ -343,6 +277,82 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
         <div className="screener-hint" style={{ color:'var(--text-2)' }}>
           目前篩選條件下沒有符合的股票。
           試著降低「RS ≥」或「條件 ≥」門檻，或切換建議篩選為「全部」。
+        </div>
+      )}
+
+      {/* ── 高優先候選面板（可收起，預設收起以免遮擋表格）── */}
+      {highPriority.length > 0 && (
+        <div className="priority-panel">
+          <div
+            className="priority-title"
+            style={{ cursor:'pointer', userSelect:'none' }}
+            onClick={() => setShowPriority(p => !p)}
+          >
+            🎯 高優先候選
+            <span className="priority-count">{highPriority.length} 檔</span>
+            <span className="priority-sub">— 可考慮進場 / 即將突破</span>
+            <span style={{ marginLeft:'auto', fontSize:12, color:'var(--text-3)' }}>
+              {showPriority ? '▲ 收起' : '▼ 展開'}
+            </span>
+          </div>
+          {showPriority && (
+            <div className="priority-cards">
+              {highPriority.map(r => {
+                const rec = r.recommendation
+                const sty = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.low
+                return (
+                  <div
+                    key={r.symbol}
+                    className="priority-card"
+                    style={{ borderColor: sty.border, background: sty.bg }}
+                  >
+                    <div className="pc-header">
+                      <div>
+                        <span className="pc-sym" onClick={() => onSelectStock(r.symbol)}>{r.symbol}</span>
+                        <span className="pc-name">{r.name}</span>
+                      </div>
+                      <span className="pc-action" style={{ color: sty.text }}>{rec?.action_label}</span>
+                    </div>
+
+                    {rec?.entry && (
+                      <div className="pc-levels">
+                        <div className="pc-level">
+                          <span className="pc-lk">進場</span>
+                          <span className="pc-lv" style={{ color:'var(--text-1)' }}>{rec.entry}</span>
+                        </div>
+                        <div className="pc-level">
+                          <span className="pc-lk">停損</span>
+                          <span className="pc-lv" style={{ color:'var(--up)' }}>{rec.stop}</span>
+                        </div>
+                        <div className="pc-level">
+                          <span className="pc-lk">目標</span>
+                          <span className="pc-lv" style={{ color:'var(--down)' }}>{rec.target}</span>
+                        </div>
+                        {rec.rr && (
+                          <div className="pc-level">
+                            <span className="pc-lk">RR</span>
+                            <span className="pc-lv" style={{ color: rec.rr >= 2 ? 'var(--down)' : 'var(--warn)' }}>
+                              1:{rec.rr}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="pc-reason">{rec?.reason}</div>
+
+                    <div className="pc-footer">
+                      <span className="pc-meta">RS {r.rs_rating} · {r.passed}/8 · {rec?.setup_type}</span>
+                      <div style={{ display:'flex', gap:6 }}>
+                        {r.pocket_pivot && <span className="pp-badge">🚀 PP</span>}
+                        <button className="chart-link-btn" onClick={() => onSelectStock(r.symbol)}>看圖 →</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
