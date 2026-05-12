@@ -33,6 +33,16 @@ export default function Journal() {
 
   useEffect(() => saveTrades(trades), [trades])
 
+  // 連續虧損偵測
+  const consecutiveLosses = useMemo(() => {
+    let count = 0
+    for (const t of trades) {
+      if (t.result === 'loss') count++
+      else if (t.result === 'win') break
+    }
+    return count
+  }, [trades])
+
   // 統計
   const stats = useMemo(() => {
     const closed = trades.filter(t => t.result !== 'open' && t.r_multiple != null)
@@ -129,6 +139,27 @@ export default function Journal() {
           </>
         )}
       </div>
+
+      {/* ── 連續虧損警示 ── */}
+      {consecutiveLosses >= 3 && (
+        <div className="consec-loss-warn">
+          <span className="consec-icon">⚠️</span>
+          <div>
+            <strong>連續虧損 {consecutiveLosses} 筆！</strong>
+            <span> Minervini 建議：立刻縮小部位至 50% 以下，暫停新進場，
+            先找出虧損原因再恢復操作。</span>
+          </div>
+        </div>
+      )}
+      {consecutiveLosses >= 5 && (
+        <div className="consec-loss-warn danger">
+          <span className="consec-icon">🚨</span>
+          <div>
+            <strong>連續虧損 {consecutiveLosses} 筆，建議完全暫停！</strong>
+            <span> 回到紙上交易練習，重新審視進場條件是否符合 SEPA 規則。</span>
+          </div>
+        </div>
+      )}
 
       {/* ── 統計 ── */}
       {stats && (

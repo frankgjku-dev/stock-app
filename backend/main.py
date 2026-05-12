@@ -60,18 +60,112 @@ scan_cache = {
 }
 
 # ══════════════════════════════════════════════════════════
-#  Trend Template 計算
+#  VCP 回檔序列偵測（Volatility Contraction Pattern）
 # ══════════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════════
-#  VCP 偵測（Volatility Contraction Pattern）
-# ══════════════════════════════════════════════════════════
+
+def _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100, window=5, min_depth_pct=3.0):
+    """
+    在 lookback 根 K 棒內，找出真正的 VCP 回檔序列。
+
+    算法：
+    1. 以 window 根為鄰域找局部高點（swing high）與低點（swing low）
+    2. 每個高點 → 往後找第一個深度 >= min_depth_pct 的低點，組成一次「回檔」
+    3. 去除重疊，建立時序排序的回檔清單
+
+    回傳 list[dict]：
+      peak / trough：價格
+      depth_pct：回檔深度（%）
+      avg_vol：回檔區間均量
+    """
+    n   = min(lookback, len(h_arr))
+    h   = h_arr[-n:].astype(float)
+    l   = l_arr[-n:].astype(float)
+    v   = v_arr[-n:].astype(float)
+    N   = len(h)
+    if N < window * 2 + 4:
+        return []
+
+    peaks, troughs = [], []
+    for i in range(window, N - window):
+        # 局部高點：自身 >= 左右各 window 根的最高
+        if h[i] >= np.max(h[i - window: i + window + 1]) - 1e-6:
+            if not peaks or i - peaks[-1][0] >= window:
+                peaks.append((i, float(h[i])))
+            elif h[i] > peaks[-1][1]:          # 同一區塊取最高
+                peaks[-1] = (i, float(h[i]))
+        # 局部低點
+        if l[i] <= np.min(l[i - window: i + window + 1]) + 1e-6:
+            if not troughs or i - troughs[-1][0] >= window:
+                troughs.append((i, float(l[i])))
+            elif l[i] < troughs[-1][1]:
+                troughs[-1] = (i, float(l[i]))
+
+    raw = []
+    for pidx, ph in peaks:
+        # 找 peak 後 40 根以內最早的低點
+        nxt = [(ti, tl) for ti, tl in troughs if pidx < ti <= pidx + 40]
+        if not nxt:
+            continue
+        tidx, tl = nxt[0]                          # 第一個自然低點
+        depth = (ph - tl) / ph * 100
+        if depth >= min_depth_pct:
+            raw.append({
+                "peak_idx":   pidx,
+                "trough_idx": tidx,
+                "peak":       round(ph, 2),
+                "trough":     round(tl, 2),
+                "depth_pct":  round(depth, 1),
+                "avg_vol":    float(np.mean(v[pidx: tidx + 1])),
+            })
+
+    if not raw:
+        return []
+
+    # 去除重疊（同一區間保留深度最大的）
+    raw.sort(key=lambda x: x["peak_idx"])
+    deduped = [raw[0]]
+    for pb in raw[1:]:
+        if pb["peak_idx"] > deduped[-1]["trough_idx"]:
+            deduped.append(pb)
+        elif pb["depth_pct"] > deduped[-1]["depth_pct"]:
+            deduped[-1] = pb
+
+    return deduped
+
+
+def _best_contraction_sequence(pullbacks):
+    """
+    從回檔清單中找「深度遞減」的最長子序列。
+    每次回檔深度必須小於前次 × 0.85（至少縮小 15%）。
+    回傳最長子序列（list[dict]）。
+    """
+    if not pullbacks:
+        return []
+    recent = pullbacks[-8:]   # 只看最近 8 次
+    best = []
+    for start in range(len(recent)):
+        seq = [recent[start]]
+        for j in range(start + 1, len(recent)):
+            if recent[j]["depth_pct"] < seq[-1]["depth_pct"] * 0.85:
+                seq.append(recent[j])
+        if len(seq) > len(best):
+            best = seq
+    return best
+
+
 def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -> dict:
     """
-    VCP 量化評分（0–5 分）
-    5 項指標各 1 分，>= 4 為強、3 為中、2 為弱
+    VCP 完整偵測：
+    ① 5 項量化指標評分（0–5 分）
+    ② 真正的回檔序列偵測（2–6 次深度遞減）
+    ③ Pivot Point = 最後一次收縮的高點（最精確定義）
     """
-    empty = {"score": 0, "label": "", "pivot": 0.0, "dist_pivot": 0.0,
-             "atr_ratio": None, "details": []}
+    empty = {
+        "score": 0, "label": "", "pivot": 0.0, "dist_pivot": 0.0,
+        "atr_ratio": None, "days_below_pivot": 0, "details": [],
+        "contractions": 0, "contraction_depths": [], "vol_contracting": False,
+        "last_depth_pct": 0.0,
+    }
     if len(df) < 60:
         return empty
 
@@ -79,70 +173,88 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     l = df["Low"].values.astype(float)
     v = df["Volume"].values.astype(float)
 
-    score   = 0
-    details = []
+    score, details = 0, []
 
-    # 1. 高位整理：股價在 MA50 以上且距52週高點 < 25%
-    near_high = cur_close >= ma50 and cur_close >= high52 * 0.75
-    if near_high:
-        score += 1
-        details.append("高位整理")
+    # ① 高位整理
+    if cur_close >= ma50 and cur_close >= high52 * 0.75:
+        score += 1; details.append("高位整理")
 
-    # 2. 波動收縮：ATR(20) / ATR(60) < 0.80
-    atr20 = float(np.mean(h[-20:] - l[-20:])) if len(h) >= 20 else 0.0
-    atr60 = float(np.mean(h[-60:] - l[-60:])) if len(h) >= 60 else atr20
+    # ② ATR 波動收縮
+    atr20     = float(np.mean(h[-20:] - l[-20:])) if len(h) >= 20 else 0.0
+    atr60     = float(np.mean(h[-60:] - l[-60:])) if len(h) >= 60 else atr20
     atr_ratio = round(atr20 / atr60, 2) if atr60 > 0 else 1.0
     if atr60 > 0 and atr_ratio < 0.80:
-        score += 1
-        details.append(f"波動收縮 ({atr_ratio})")
+        score += 1; details.append(f"波動收縮({atr_ratio})")
 
-    # 3. 量能萎縮：近20日均量 < 近50日均量 × 0.75
+    # ③ 量能萎縮（近20日均量 < 近50日 × 0.75）
     vol20 = float(np.mean(v[-20:])) if len(v) >= 20 else 0.0
     vol50 = float(np.mean(v[-50:])) if len(v) >= 50 else vol20
     if vol50 > 0 and vol20 / vol50 < 0.75:
-        score += 1
-        details.append("量能萎縮")
+        score += 1; details.append("量能萎縮")
 
-    # 4. 近10日緊密整理：(最高 - 最低) / 收盤 < 8%
+    # ④ 近10日緊密整理（高低差 < 8%）
     if len(h) >= 10:
         tight = (float(max(h[-10:])) - float(min(l[-10:]))) / cur_close
         if tight < 0.08:
-            score += 1
-            details.append(f"緊密整理 ({tight*100:.1f}%)")
+            score += 1; details.append(f"緊密整理({tight*100:.1f}%)")
 
-    # 5. 合理回檔深度：近30日高低差 3%–15%（有收縮空間但未崩跌）
+    # ⑤ 健康回檔（近30日高低差 3–15%）
     if len(h) >= 30:
-        pb = (float(max(h[-30:])) - float(min(l[-30:]))) / float(max(h[-30:]))
-        if 0.03 < pb < 0.15:
-            score += 1
-            details.append(f"健康回檔 ({pb*100:.1f}%)")
+        pb30 = (float(max(h[-30:])) - float(min(l[-30:]))) / float(max(h[-30:]))
+        if 0.03 < pb30 < 0.15:
+            score += 1; details.append(f"健康回檔({pb30*100:.1f}%)")
 
-    # Pivot Point = 5~45 交易日前的最高點
-    # 排除最近 5 日（避免剛創新高就當 pivot），
-    # 往前看 40 個交易日（≈ 8 週），捕捉整理區頂部
-    # 若一直漲的股票，此 pivot 會低於現價很多 → dist_piv 大負數 → 觸發「延伸勿追」
-    # 若正在底部整理的股票，此 pivot ≈ 整理區高點 → dist_piv ≈ 正數 → 正確
-    ph_start = max(len(h) - 45, 0)
-    ph_end   = max(len(h) - 5,  1)
-    pivot_h  = h[ph_start:ph_end]
-    pivot     = round(float(max(pivot_h)) if len(pivot_h) > 0 else cur_close, 2)
-    dist_piv  = round((pivot - cur_close) / pivot * 100, 1)
-    label     = ("VCP強" if score >= 4 else
-                 "VCP中" if score >= 3 else
-                 "VCP弱" if score >= 2 else "")
+    # ══ 真正的回檔序列偵測 ══════════════════════════════════
+    all_pbs  = _find_pullback_sequence(h, l, v)
+    vcp_seq  = _best_contraction_sequence(all_pbs)
+    num_cont = len(vcp_seq)
+    depths   = [pb["depth_pct"] for pb in vcp_seq]
 
-    # 近20日收盤在 pivot 以下的天數（確認有真正在整理，而非剛衝破）
-    recent_c = df["Close"].values[-20:] if len(df) >= 20 else df["Close"].values
-    days_below_pivot = int(sum(1 for c in recent_c if float(c) < pivot))
+    # 量能是否也逐步遞減
+    vol_contracting = (
+        num_cont >= 2 and
+        all(vcp_seq[i]["avg_vol"] >= vcp_seq[i + 1]["avg_vol"]
+            for i in range(num_cont - 1))
+    )
+
+    # 回檔序列評分加成（最高仍 5 分）
+    if 2 <= num_cont <= 6:
+        details.append(f"回檔序列{num_cont}次({'>'.join(str(d)+'%' for d in depths)})")
+        score = min(score + 1, 5)
+    if vol_contracting:
+        details.append("量能逐步遞減"); score = min(score + 1, 5)
+
+    last_depth_pct = vcp_seq[-1]["depth_pct"] if vcp_seq else 0.0
+
+    # ══ Pivot Point ════════════════════════════════════════
+    # 優先使用最後一次收縮的高點（Minervini 定義）
+    # 次之：5–45 日前最高點（保底）
+    if vcp_seq:
+        pivot = round(vcp_seq[-1]["peak"], 2)
+    else:
+        ph_start = max(len(h) - 45, 0)
+        ph_end   = max(len(h) - 5,  1)
+        pivot_h  = h[ph_start:ph_end]
+        pivot    = round(float(max(pivot_h)) if len(pivot_h) > 0 else cur_close, 2)
+
+    dist_piv         = round((pivot - cur_close) / pivot * 100, 1)
+    recent_c         = df["Close"].values[-20:] if len(df) >= 20 else df["Close"].values
+    days_below_pivot = int(sum(1 for x in recent_c if float(x) < pivot))
+    label            = ("VCP強" if score >= 4 else "VCP中" if score >= 3 else
+                        "VCP弱" if score >= 2 else "")
 
     return {
-        "score":            score,
-        "label":            label,
-        "pivot":            pivot,
-        "dist_pivot":       dist_piv,          # 正=距突破點%，負=已突破
-        "atr_ratio":        atr_ratio,
-        "days_below_pivot": days_below_pivot,  # 近20日有幾天在 pivot 以下
-        "details":          details,
+        "score":             score,
+        "label":             label,
+        "pivot":             pivot,
+        "dist_pivot":        dist_piv,
+        "atr_ratio":         atr_ratio,
+        "days_below_pivot":  days_below_pivot,
+        "details":           details,
+        "contractions":      num_cont,
+        "contraction_depths": depths,
+        "vol_contracting":   vol_contracting,
+        "last_depth_pct":    last_depth_pct,
     }
 
 
@@ -234,9 +346,18 @@ def generate_recommendation(r: dict) -> dict:
     from_ma200 = r.get("from_ma200", 0)        # 距MA200%
 
     pivot            = vcp.get("pivot")
-    dist_piv         = vcp.get("dist_pivot")       # 正=距突破點%, 負=已突破
+    dist_piv         = vcp.get("dist_pivot")
     vcp_score        = vcp.get("score", 0)
-    days_below_pivot = vcp.get("days_below_pivot", 0)  # 近20日在pivot以下天數
+    days_below_pivot = vcp.get("days_below_pivot", 0)
+    contractions     = vcp.get("contractions", 0)        # 實際回檔次數
+    depths           = vcp.get("contraction_depths", []) # 各次深度清單
+    vol_contracting  = vcp.get("vol_contracting", False)
+    last_depth_pct   = vcp.get("last_depth_pct", 0.0)
+    # 組合 VCP 描述文字（用於 reason）
+    vcp_desc = (f"VCP{vcp_score}/5，{contractions}次收縮({'>'.join(str(d)+'%' for d in depths)})"
+                f"{'，量能遞減' if vol_contracting else ''}"
+                if contractions >= 2
+                else f"VCP{vcp_score}/5")
 
     def make(action, label, urgency, reason, setup="",
              entry=None, stop=None, target=None, rr=None):
@@ -266,76 +387,81 @@ def generate_recommendation(r: dict) -> dict:
             setup="過度延伸",
         )
 
-    # ── 1. Pocket Pivot（最高優先） ──────────────────────
-    # 需要：PP + VCP ≥ 3 + RS ≥ 65 + 至少 8 天在 pivot 以下整理（有真正的底部）
-    if pp and vcp_score >= 3 and rs >= 65 and days_below_pivot >= 8:
-        stop   = close * 0.925
-        tgt    = close + (close - stop) * 2.5
+    # ── 1. Pocket Pivot（最高優先）──────────────────────────
+    # 需要：PP + VCP ≥ 3 + 實際回檔序列 ≥ 2 次 + RS ≥ 65 + 整理 ≥ 8 天
+    if pp and vcp_score >= 3 and contractions >= 2 and rs >= 65 and days_below_pivot >= 8:
+        stop = close * 0.925
+        tgt  = close + (close - stop) * 2.5
         return make(
             "buy_now", "🚀 可考慮進場", "high",
-            f"Pocket Pivot！量能突破過去10日黑K最大量，VCP {vcp_score}/5，RS {rs:.0f}，"
-            f"近20日有 {days_below_pivot} 天在樞紐 {pivot} 以下整理，距MA50 {from_ma50:.1f}%。"
+            f"Pocket Pivot！量能突破過去10日黑K最大量。"
+            f"{vcp_desc}，RS {rs:.0f}，整理{days_below_pivot}/20天，距MA50 {from_ma50:.1f}%。"
+            f"最後收縮深度 {last_depth_pct:.1f}%（規格 < 10%）。"
             f"進場 {close}，停損 {round(stop,2)}（{round((close-stop)/close*100,1)}%），"
             f"目標 {round(tgt,2)}（2.5:1）。",
-            setup=f"Pocket Pivot + VCP{vcp_score}",
+            setup=f"Pocket Pivot + {vcp_desc}",
             entry=close, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 2. 剛突破樞紐點（0~5% 以內）──────────────────────
-    # 需要：VCP ≥ 3 + RS ≥ 60 + 近20日至少 8 天在 pivot 以下（驗證有底部整理）
-    if pivot and dist_piv is not None and -5 <= dist_piv < 0 \
-            and vcp_score >= 3 and rs >= 60 and days_below_pivot >= 8:
+    # ── 2. 剛突破樞紐點（pivot 上方 0–5%）──────────────────
+    # 需要：VCP ≥ 3 + 回檔 ≥ 2 次 + RS ≥ 60 + 整理 ≥ 8 天
+    if (pivot and dist_piv is not None and -5 <= dist_piv < 0
+            and vcp_score >= 3 and contractions >= 2 and rs >= 60 and days_below_pivot >= 8):
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "buy_now", "🟢 剛突破，可進場", "high",
-            f"剛突破樞紐 {pivot}（超出 {abs(dist_piv):.1f}%），VCP {vcp_score}/5，RS {rs:.0f}，"
-            f"整理 {days_below_pivot}/20 天，距MA50 {from_ma50:.1f}%。"
+            f"剛突破樞紐 {pivot}（超出 {abs(dist_piv):.1f}%）。"
+            f"{vcp_desc}，RS {rs:.0f}，整理{days_below_pivot}/20天。"
+            f"最後收縮深度 {last_depth_pct:.1f}%（規格 < 10%）。"
             f"進場 ≤ {round(entry,2)}，停損 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），目標 {round(tgt,2)}。",
-            setup=f"VCP突破 ({vcp_score}/5)",
+            setup=f"VCP突破({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 3. 即將突破（距樞紐 0–3%）────────────────────────
-    # 需要：VCP ≥ 3 + RS ≥ 60 + 近20日至少 8 天在 pivot 以下（有真正整理底部）
-    if pivot and dist_piv is not None and 0 <= dist_piv <= 3 \
-            and vcp_score >= 3 and rs >= 60 and days_below_pivot >= 8:
+    # ── 3. 即將突破（距樞紐 0–3%）──────────────────────────
+    # 需要：VCP ≥ 3 + 回檔 ≥ 2 次 + RS ≥ 60 + 整理 ≥ 8 天
+    if (pivot and dist_piv is not None and 0 <= dist_piv <= 3
+            and vcp_score >= 3 and contractions >= 2 and rs >= 60 and days_below_pivot >= 8):
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "breakout", "🔔 即將突破", "high",
-            f"距樞紐點 {pivot} 僅 {dist_piv}%，VCP {vcp_score}/5，RS {rs:.0f}，"
-            f"近20日有 {days_below_pivot} 天整理，距MA50 {from_ma50:.1f}%。"
-            f"突破放量後掛單 {round(entry,2)}，停損 {round(stop,2)}，目標 {round(tgt,2)}（2.5:1）。",
-            setup=f"VCP ({vcp_score}/5)",
+            f"距樞紐點 {pivot} 僅 {dist_piv}%，整理{days_below_pivot}/20天。"
+            f"{vcp_desc}，RS {rs:.0f}，最後收縮深度 {last_depth_pct:.1f}%。"
+            f"突破放量（≥50日均量×1.5）後掛單 {round(entry,2)}，"
+            f"停損 {round(stop,2)}，目標 {round(tgt,2)}（2.5:1）。",
+            setup=f"VCP({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 4. 設置提醒（距樞紐 3–8%，整理中）───────────────
-    if pivot and dist_piv is not None and 3 < dist_piv <= 8 and vcp_score >= 2 and rs >= 55:
+    # ── 4. 設置提醒（距樞紐 3–8%）──────────────────────────
+    if (pivot and dist_piv is not None and 3 < dist_piv <= 8
+            and vcp_score >= 2 and rs >= 55):
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
+        cont_note = f"，回檔序列{contractions}次" if contractions >= 2 else "，尚未形成完整VCP序列"
         return make(
             "set_alert", "⏰ 設置突破提醒", "medium",
-            f"距樞紐點 {pivot} 約 {dist_piv}%，VCP {vcp_score}/5，RS {rs:.0f}，整理接近尾聲。"
+            f"距樞紐點 {pivot} 約 {dist_piv}%，VCP{vcp_score}/5{cont_note}，RS {rs:.0f}，整理接近尾聲。"
             f"設 {round(entry,2)} 價格提醒，突破放量後進場，停損 {round(stop,2)}，目標 {round(tgt,2)}。",
-            setup=f"VCP ({vcp_score}/5)",
+            setup=f"VCP({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 5. 整理觀察（距樞紐 8–25%）──────────────────────
+    # ── 5. 整理觀察（距樞紐 8–25%）──────────────────────────
     if pivot and dist_piv is not None and 8 < dist_piv <= 25 and vcp_score >= 2:
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "watch", "👀 整理觀察", "low",
-            f"VCP 整理中，距樞紐點 {dist_piv}%，尚未到進場時機。"
-            f"耐心等待波動收縮完成（目標進場 {round(entry,2)}，MA50 {from_ma50:.1f}%）。",
-            setup=f"VCP ({vcp_score}/5)",
+            f"VCP 整理中，距樞紐點 {dist_piv}%。{vcp_desc}，RS {rs:.0f}，距MA50 {from_ma50:.1f}%。"
+            f"耐心等待波動收縮完成（目標進場 {round(entry,2)}）。",
+            setup=f"VCP({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
@@ -438,6 +564,79 @@ async def run_scan():
 # ══════════════════════════════════════════════════════════
 #  大盤狀態
 # ══════════════════════════════════════════════════════════
+def _detect_ftd(df: pd.DataFrame) -> dict:
+    """
+    Follow-Through Day (FTD) 偵測。
+    定義：大盤修正後，出現「反彈嘗試」，
+    在反彈第 4–7 天，收盤漲幅 > 1.7% 且量能大於前一日 → FTD 確認。
+
+    回傳：
+      has_ftd: bool
+      ftd_gain_pct: 當日漲幅
+      days_since_ftd: 距今幾個交易日
+      rally_day: 反彈第幾天觸發
+      status: 描述字串
+    """
+    if len(df) < 20:
+        return {"has_ftd": False, "status": "資料不足"}
+
+    c = df["Close"].values[-40:].astype(float)
+    v = df["Volume"].values[-40:].astype(float)
+    n = len(c)
+
+    # 1. 找最近一次「修正低點」：從近 30 日找最低點，且須比前期高點低 5%+
+    window = min(30, n)
+    sub_c  = c[-window:]
+    low_offset = int(np.argmin(sub_c))          # 在 sub_c 中的位置
+    low_idx    = (n - window) + low_offset       # 在 c 中的絕對位置
+    low_price  = c[low_idx]
+
+    # 找低點前的高點（往前最多 15 根）
+    pre_high = float(max(c[max(0, low_idx - 15): low_idx])) if low_idx > 0 else low_price
+    if pre_high == 0 or low_price / pre_high > 0.95:
+        # 修正幅度不到 5%，不算有意義的修正
+        return {"has_ftd": False, "status": "近期無明顯修正"}
+
+    # 2. 找反彈 Day 1 = 低點後第一個收高於前日的交易日
+    rally_start = None
+    for i in range(low_idx + 1, n):
+        if c[i] > c[i - 1]:
+            rally_start = i
+            break
+    if rally_start is None:
+        return {"has_ftd": False, "status": "尚未開始反彈"}
+
+    # 3. 在 Day 4–7 找 FTD（漲 > 1.7% + 量 > 前日）
+    for d in range(3, 8):
+        idx = rally_start + d
+        if idx >= n:
+            break
+        # 確認低點未被跌破（否則反彈嘗試失敗，重置）
+        if c[idx] < low_price:
+            return {"has_ftd": False, "status": "反彈失敗，低點被跌破"}
+        gain_pct = (c[idx] - c[idx - 1]) / c[idx - 1] * 100
+        if gain_pct > 1.7 and v[idx] > v[idx - 1]:
+            days_since = n - 1 - idx
+            return {
+                "has_ftd":      True,
+                "ftd_gain_pct": round(gain_pct, 2),
+                "rally_day":    d + 1,         # 人類可讀：第幾天
+                "days_since_ftd": int(days_since),
+                "status":       (f"✅ FTD 確認（反彈第{d+1}天，+{gain_pct:.1f}%放量）"
+                                  if days_since == 0
+                                  else f"✅ FTD 已確認（{days_since}天前，反彈第{d+1}天）"),
+            }
+
+    # 還在 Day 1–3，尚未到可觀察窗口
+    days_in_rally = n - 1 - rally_start
+    if days_in_rally < 3:
+        return {
+            "has_ftd": False,
+            "status":  f"反彈嘗試第{days_in_rally + 1}天，等待第4天確認FTD",
+        }
+    return {"has_ftd": False, "status": "Day 4–7 未出現放量大漲，反彈嘗試中"}
+
+
 async def _get_index_status_async():
     loop = asyncio.get_event_loop()
     def _fetch():
@@ -453,14 +652,16 @@ async def _get_index_status_async():
     m200 = float(close.rolling(200).mean().iloc[-1])
 
     # Distribution Days (近 25 個交易日，量增收黑)
-    vol  = df["Volume"].dropna()
-    dist = 0
+    dist   = 0
     recent = df.tail(25)
     for i in range(1, len(recent)):
         row  = recent.iloc[i]
         prev = recent.iloc[i - 1]
         if row["Close"] < prev["Close"] and row["Volume"] > prev["Volume"]:
             dist += 1
+
+    # FTD 偵測
+    ftd = _detect_ftd(df)
 
     trend = "多頭" if c > m50 > 0 and c > m200 else ("震盪" if c > m200 else "空頭")
     return {
@@ -471,6 +672,7 @@ async def _get_index_status_async():
         "above_ma200": c > m200,
         "distribution_days": dist,
         "trend": trend,
+        "ftd":   ftd,
         "suggestion": "滿倉" if trend == "多頭" and dist < 4 else
                       ("半倉" if dist < 6 else "空倉/觀望"),
     }

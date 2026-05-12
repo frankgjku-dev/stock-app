@@ -163,11 +163,23 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
             </span>
             <span className="board-item">MA50 {market.ma50?.toLocaleString()}</span>
             <span className="board-item">MA200 {market.ma200?.toLocaleString()}</span>
-            <span className="board-item">散佈日 {market.distribution_days}</span>
+            <span className="board-item">散佈日 <strong style={{
+              color: market.distribution_days >= 6 ? 'var(--up)' :
+                     market.distribution_days >= 4 ? 'var(--warn)' : 'var(--down)'
+            }}>{market.distribution_days}</strong>/25</span>
             <span className={`board-badge ${
               market.trend === '多頭' ? 'badge-green' :
               market.trend === '空頭' ? 'badge-red' : 'badge-yellow'
             }`}>{market.trend}</span>
+            {/* FTD 偵測結果 */}
+            {market.ftd && (
+              <span className={`board-badge ${market.ftd.has_ftd ? 'badge-green' : 'badge-yellow'}`}
+                title={market.ftd.status}>
+                {market.ftd.has_ftd
+                  ? `✅ FTD +${market.ftd.ftd_gain_pct}%`
+                  : `FTD: ${market.ftd.status}`}
+              </span>
+            )}
             <span className="board-item">
               建議倉位：<strong style={{ color:'var(--text-1)' }}>{market.suggestion}</strong>
             </span>
@@ -371,8 +383,15 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                       </td>
                       <td>
                         {vc
-                          ? <span className="vcp-badge" style={{ background:vc.bg, color:vc.color }}>
+                          ? <span className="vcp-badge" style={{ background:vc.bg, color:vc.color }}
+                              title={vcp.details?.join(' · ')}>
                               {vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱'} {vcp.score}/5
+                              {vcp.contractions >= 2
+                                ? <span style={{ fontSize:10, marginLeft:4, opacity:0.85 }}>
+                                    {vcp.contractions}收縮
+                                    {vcp.vol_contracting ? '📉' : ''}
+                                  </span>
+                                : null}
                             </span>
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>

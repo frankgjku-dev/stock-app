@@ -621,6 +621,25 @@ body {
   padding: 24px 28px;
   display: flex; flex-direction: column; gap: 18px;
 }
+/* ── 連續虧損警示 ──────────────────────────────────────── */
+.consec-loss-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(196, 90, 74, 0.10);
+  border: 1px solid rgba(196, 90, 74, 0.40);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+.consec-loss-warn.danger {
+  background: rgba(196, 90, 74, 0.18);
+  border-color: rgba(196, 90, 74, 0.70);
+}
+.consec-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+
 .stats-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .stat-card {
   background: var(--surface);
