@@ -193,6 +193,8 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
         "low52":     round(low52, 2),
         "from_high": round((c / high52 - 1) * 100, 1),
         "from_low":  round((c / low52  - 1) * 100, 1),
+        "from_ma50":  round((c / m50  - 1) * 100, 1),
+        "from_ma200": round((c / m200 - 1) * 100, 1),
         "rs_raw":    round(rs_raw, 2),
         "rs_rating": 0,
         "conditions":     conds,
@@ -215,7 +217,9 @@ def generate_recommendation(r: dict) -> dict:
     pp         = r.get("pocket_pivot", False)
     rs         = r.get("rs_rating", 0)
     passed     = r.get("passed", 0)
-    from_high  = r.get("from_high", -100)
+    from_high  = r.get("from_high", -100)     # 距52週高點%（負=低於高點）
+    from_ma50  = r.get("from_ma50",  0)        # 距MA50% （正=高於MA50）
+    from_ma200 = r.get("from_ma200", 0)        # 距MA200%
 
     pivot      = vcp.get("pivot")
     dist_piv   = vcp.get("dist_pivot")   # 正=距突破點%, 負=已突破
@@ -235,81 +239,99 @@ def generate_recommendation(r: dict) -> dict:
             "rr":           round(rr,     2) if rr     else None,
         }
 
+    # ── 0. 距均線延伸過大 → 直接標記，不進任何進場分析 ────
+    # Minervini 原則：超過MA50的20%以上或MA200的50%以上，
+    # 代表已在漲幅末段，追高風險極高
+    is_extended = from_ma50 > 20 or from_ma200 > 50
+    if is_extended:
+        support_proxy = round(close / (1 + from_ma50 / 100) * 1.05, 2)   # 粗估MA50+5%緩衝
+        return make(
+            "extended", "⚠️ 延伸過大，等回測", "none",
+            f"股價已在MA50上方 {from_ma50:.1f}%（MA200上方 {from_ma200:.1f}%），"
+            f"屬突破後延伸行情，不宜追高。"
+            f"等待回測均線整理（MA50附近 {support_proxy}）量縮後再重新評估。",
+            setup="過度延伸",
+        )
+
     # ── 1. Pocket Pivot（最高優先） ──────────────────────
-    if pp and vcp_score >= 2 and rs >= 65:
+    # 需要：PP 訊號 + VCP ≥ 3 + RS ≥ 65 + 距高點合理（< -3%，不在頂部）
+    # 距高點 > -3% 且 VCP 不夠強，視為已在頂部附近，不推薦
+    if pp and vcp_score >= 3 and rs >= 65 and from_high <= -3:
         stop   = close * 0.925
         tgt    = close + (close - stop) * 2.5
         return make(
             "buy_now", "🚀 可考慮進場", "high",
-            f"Pocket Pivot 訊號！量能突破過去 10 日黑K最大量，VCP {vcp_score}/5，RS {rs:.0f}。"
-            f"建議進場價 {close}，停損 {round(stop,2)}（{round((close-stop)/close*100,1)}%），"
-            f"目標 {round(tgt,2)}（損益比 2.5:1）",
+            f"Pocket Pivot！量能突破過去10日黑K最大量，VCP {vcp_score}/5，RS {rs:.0f}，"
+            f"距高點 {from_high}%，距MA50 {from_ma50:.1f}%。"
+            f"進場 {close}，停損 {round(stop,2)}（{round((close-stop)/close*100,1)}%），"
+            f"目標 {round(tgt,2)}（2.5:1）。",
             setup=f"Pocket Pivot + VCP{vcp_score}",
             entry=close, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 2. 已突破樞紐點（-5% 以內）──────────────────────
-    if pivot and dist_piv is not None and dist_piv < 0 and dist_piv >= -5:
+    # ── 2. 剛突破樞紐點（0~5% 以內）──────────────────────
+    # 需要：VCP ≥ 3 + RS ≥ 60 + 距高點不過遠（上方 5% 以內代表確實剛突破）
+    if pivot and dist_piv is not None and -5 <= dist_piv < 0 and vcp_score >= 3 and rs >= 60:
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
-            "buy_now", "🟢 剛突破進場", "high",
-            f"剛突破樞紐點 {pivot}（距高 {from_high}%），量能確認後可進場。"
-            f"建議進場 ≤ {round(entry,2)}，停損 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），"
-            f"目標 {round(tgt,2)}。",
+            "buy_now", "🟢 剛突破，可進場", "high",
+            f"剛突破樞紐 {pivot}（{abs(dist_piv):.1f}%），VCP {vcp_score}/5，RS {rs:.0f}，"
+            f"距MA50 {from_ma50:.1f}%。量能確認後進場 ≤ {round(entry,2)}，"
+            f"停損 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），目標 {round(tgt,2)}。",
             setup=f"VCP突破 ({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 3. 距樞紐點 0–2%（即將突破）──────────────────────
-    if pivot and dist_piv is not None and 0 <= dist_piv <= 2:
+    # ── 3. 即將突破（距樞紐 0–3%）────────────────────────
+    # 需要：VCP ≥ 3 + RS ≥ 60
+    if pivot and dist_piv is not None and 0 <= dist_piv <= 3 and vcp_score >= 3 and rs >= 60:
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "breakout", "🔔 即將突破", "high",
-            f"距樞紐點 {pivot} 僅 {dist_piv}%，突破後量能確認即可進場。"
-            f"建議掛單 {round(entry,2)}，停損設 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），"
-            f"目標 {round(tgt,2)}（損益比 2.5:1）。",
-            setup=f"VCP ({vcp_score}/5)",
-            entry=entry, stop=stop, target=tgt, rr=2.5,
-        )
-
-    # ── 4. 距樞紐點 2–6%（設置提醒）──────────────────────
-    if pivot and dist_piv is not None and 2 < dist_piv <= 6:
-        entry = pivot * 1.003
-        stop  = pivot * 0.925
-        tgt   = entry + (entry - stop) * 2.5
-        return make(
-            "set_alert", "⏰ 設置突破提醒", "medium",
-            f"距樞紐點 {pivot} 約 {dist_piv}%，整理接近尾聲。"
-            f"建議設 {round(entry,2)} 價格提醒，突破放量後進場，"
+            f"距樞紐點 {pivot} 僅 {dist_piv}%，VCP {vcp_score}/5，RS {rs:.0f}，"
+            f"距MA50 {from_ma50:.1f}%。突破放量後掛單 {round(entry,2)}，"
             f"停損 {round(stop,2)}，目標 {round(tgt,2)}（2.5:1）。",
             setup=f"VCP ({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 5. 距樞紐點 6–20%（整理觀察）─────────────────────
-    if pivot and dist_piv is not None and 6 < dist_piv <= 20:
+    # ── 4. 設置提醒（距樞紐 3–8%，整理中）───────────────
+    if pivot and dist_piv is not None and 3 < dist_piv <= 8 and vcp_score >= 2 and rs >= 55:
+        entry = pivot * 1.003
+        stop  = pivot * 0.925
+        tgt   = entry + (entry - stop) * 2.5
+        return make(
+            "set_alert", "⏰ 設置突破提醒", "medium",
+            f"距樞紐點 {pivot} 約 {dist_piv}%，VCP {vcp_score}/5，RS {rs:.0f}，整理接近尾聲。"
+            f"設 {round(entry,2)} 價格提醒，突破放量後進場，停損 {round(stop,2)}，目標 {round(tgt,2)}。",
+            setup=f"VCP ({vcp_score}/5)",
+            entry=entry, stop=stop, target=tgt, rr=2.5,
+        )
+
+    # ── 5. 整理觀察（距樞紐 8–25%）──────────────────────
+    if pivot and dist_piv is not None and 8 < dist_piv <= 25 and vcp_score >= 2:
         entry = pivot * 1.003
         stop  = pivot * 0.925
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "watch", "👀 整理觀察", "low",
             f"VCP 整理中，距樞紐點 {dist_piv}%，尚未到進場時機。"
-            f"耐心等待波動收縮完成，目標進場點 {round(entry,2)}。",
+            f"耐心等待波動收縮完成（目標進場 {round(entry,2)}，MA50 {from_ma50:.1f}%）。",
             setup=f"VCP ({vcp_score}/5)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 6. 已超漲（突破超過 5%）──────────────────────────
+    # ── 6. 已突破過遠（> 5% 以上）────────────────────────
     if pivot and dist_piv is not None and dist_piv < -5:
-        ma20_proxy = close * 0.93   # 粗估回測支撐
+        ma50_price = round(close / (1 + from_ma50 / 100), 2)
         return make(
-            "extended", "⚠️ 已突破勿追高", "low",
-            f"已突破樞紐點 {pivot}（距高 {from_high}%），股價可能延伸過大。"
-            f"等待回測 MA20 / 10週線附近（約 {round(ma20_proxy,2)}）再評估。",
+            "extended", "⚠️ 突破後勿追高", "low",
+            f"已突破樞紐 {pivot}（距高 {from_high}%），超出進場窗口。"
+            f"等待回測 MA50（約 {ma50_price}）量縮整理後再評估。",
             setup="突破後延伸",
         )
 
@@ -317,8 +339,8 @@ def generate_recommendation(r: dict) -> dict:
     if passed >= 7 and rs >= 75:
         return make(
             "watch", "📊 趨勢佳，等整理", "low",
-            f"Trend Template {passed}/8，RS {rs:.0f}，Stage 2 上升趨勢確認。"
-            f"尚未形成 VCP 整理型態，耐心等待量縮整理後再找進場點。",
+            f"Trend Template {passed}/8，RS {rs:.0f}，距MA50 {from_ma50:.1f}%。"
+            f"Stage 2 上升趨勢確認，但尚未形成 VCP 整理型態，耐心等待量縮整理。",
             setup="Stage 2",
         )
 

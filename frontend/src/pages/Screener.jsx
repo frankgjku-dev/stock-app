@@ -329,6 +329,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                 <th>樞紐點</th>
                 <th>PP</th>
                 <SortTh k="from_high" label="距高%" />
+                <SortTh k="from_ma50" label="距MA50%" />
                 <SortTh k="urgency"   label="建議" />
                 <th>詳情</th><th>看圖</th>
               </tr>
@@ -390,6 +391,16 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>
                       <td className={row.from_high >= -10 ? 'up' : ''}>{row.from_high}%</td>
+                      <td>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600,
+                          color: row.from_ma50 > 20 ? 'var(--up)'
+                               : row.from_ma50 > 10 ? 'var(--warn)'
+                               : 'var(--down)',
+                        }}>
+                          {row.from_ma50 != null ? `+${row.from_ma50}%` : '—'}
+                        </span>
+                      </td>
 
                       {/* 建議欄 */}
                       <td>
@@ -419,7 +430,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                     {/* ── 展開詳情 ── */}
                     {detail === row.symbol && (
                       <tr key={`${row.symbol}-det`} className="detail-row">
-                        <td colSpan={13}>
+                        <td colSpan={14}>
                           <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
 
                             {/* 選股建議卡 */}
