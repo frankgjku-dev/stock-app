@@ -383,14 +383,18 @@ body {
   border: 1px solid var(--border);
 }
 .screener-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.screener-table th {
+.screener-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   background: var(--surface);
   color: var(--text-3);
   padding: 10px 14px; text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border-md);
   white-space: nowrap;
   font-size: 11px; text-transform: uppercase;
   letter-spacing: .5px; font-weight: 600;
+  box-shadow: 0 1px 0 var(--border);
 }
 .screener-table th.sortable { cursor: pointer; user-select: none; transition: color var(--trans); }
 .screener-table th.sortable:hover { color: var(--text-1); }

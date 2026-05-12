@@ -386,10 +386,11 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                           ? <span className="vcp-badge" style={{ background:vc.bg, color:vc.color }}
                               title={vcp.details?.join(' · ')}>
                               {vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱'} {vcp.score}/5
-                              {vcp.contractions >= 2
+                              {/* 只在仍在整理區（dist_pivot > -8%）才顯示收縮次數
+                                  已大幅突破高點的股票，舊序列數字沒有意義 */}
+                              {vcp.contractions >= 2 && (vcp.dist_pivot == null || vcp.dist_pivot > -8)
                                 ? <span style={{ fontSize:10, marginLeft:4, opacity:0.85 }}>
-                                    {vcp.contractions}收縮
-                                    {vcp.vol_contracting ? '📉' : ''}
+                                    {vcp.contractions}收縮{vcp.vol_contracting ? '📉' : ''}
                                   </span>
                                 : null}
                             </span>
