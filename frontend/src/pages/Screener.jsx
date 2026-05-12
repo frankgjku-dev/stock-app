@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../config'
 
 const CONDITIONS = ['c1','c2','c3','c4','c5','c6','c7','c8']
@@ -375,8 +375,8 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                 const isFav = allFavSymbols.includes(row.symbol)
 
                 return (
-                  <>
-                    <tr key={row.symbol} className="data-row">
+                  <React.Fragment key={row.symbol}>
+                    <tr className="data-row">
                       {/* ★ */}
                       <td>
                         <button
@@ -469,7 +469,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
 
                     {/* ── 展開詳情 ── */}
                     {detail === row.symbol && (
-                      <tr key={`${row.symbol}-det`} className="detail-row">
+                      <tr className="detail-row">
                         <td colSpan={14}>
                           <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
 
@@ -546,7 +546,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 )
               })}
             </tbody>
