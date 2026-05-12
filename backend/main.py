@@ -667,8 +667,12 @@ async def _get_index_status_async():
         if row["Close"] < prev["Close"] and row["Volume"] > prev["Volume"]:
             dist += 1
 
-    # FTD 偵測
-    ftd = _detect_ftd(df)
+    # FTD 偵測（包 try/except 避免邊界 case 讓整個 API 掛掉）
+    try:
+        ftd = _detect_ftd(df)
+    except Exception as e:
+        print(f"[ftd] error: {e}")
+        ftd = {"has_ftd": False, "status": "偵測失敗"}
 
     trend = "多頭" if c > m50 > 0 and c > m200 else ("震盪" if c > m200 else "空頭")
     return {
@@ -706,7 +710,7 @@ async def _fetch_tw_stock_universe() -> dict[str, str]:
 
     # ── 上市（TWSE）──────────────────────────────────────
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
             r = await client.get(
                 "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_d"
             )
@@ -722,7 +726,7 @@ async def _fetch_tw_stock_universe() -> dict[str, str]:
 
     # ── 上櫃（TPEX）──────────────────────────────────────
     try:
-        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
             r = await client.get(
                 "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis"
             )
@@ -739,19 +743,26 @@ async def _fetch_tw_stock_universe() -> dict[str, str]:
     return result
 
 
+async def _load_universe_bg():
+    """背景非同步載入全台股清單，不阻塞 startup"""
+    global STOCK_UNIVERSE, SCREENER_LIST
+    try:
+        universe = await _fetch_tw_stock_universe()
+        if len(universe) >= 100:
+            STOCK_UNIVERSE = universe
+            SCREENER_LIST  = dict(universe)
+            print(f"[universe] updated to {len(universe)} stocks")
+        else:
+            STOCK_UNIVERSE = dict(STOCK_LIST)
+            print("[universe] fallback to built-in list")
+    except Exception as e:
+        print(f"[universe] load failed: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
-    """啟動時非同步抓取全台股清單，失敗不影響服務啟動"""
-    global STOCK_UNIVERSE, SCREENER_LIST
-    universe = await _fetch_tw_stock_universe()
-    if len(universe) >= 100:          # 確保資料有效才切換
-        STOCK_UNIVERSE = universe
-        # 選股池 = 全市場（排除 ETF 0 開頭的已在上面過濾）
-        SCREENER_LIST  = dict(universe)
-    else:
-        # 抓取失敗，沿用內建清單
-        STOCK_UNIVERSE = dict(STOCK_LIST)
-        print("[universe] using built-in fallback list")
+    """startup 立刻回傳，股票清單在背景載入，不阻塞 HF health check"""
+    asyncio.create_task(_load_universe_bg())
 
 
 @app.get("/")
