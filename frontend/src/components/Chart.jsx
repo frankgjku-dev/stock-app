@@ -1,17 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { createChart, CrosshairMode } from 'lightweight-charts'
 
-// 台灣色彩慣例：紅漲綠跌
-const CANDLE_UP   = '#ef5350'
-const CANDLE_DOWN = '#26a69a'
+// 台灣色彩慣例：紅漲綠跌（奶茶暖化版）
+const CANDLE_UP   = '#d4736a'
+const CANDLE_DOWN = '#5fa882'
 
 const MA_CONFIG = [
-  { key: 'ma5',   period: 5,   color: '#f5c842' },
-  { key: 'ma10',  period: 10,  color: '#42a5f5' },
-  { key: 'ma20',  period: 20,  color: '#ef5350' },
-  { key: 'ma60',  period: 60,  color: '#ab47bc' },
-  { key: 'ma120', period: 120, color: '#26a69a' },
-  { key: 'ma240', period: 240, color: '#ff7043' },
+  { key: 'ma5',   period: 5,   color: '#c8925a' },  // 焦糖
+  { key: 'ma10',  period: 10,  color: '#89afd4' },  // 粉藍
+  { key: 'ma20',  period: 20,  color: '#d4736a' },  // 暖紅
+  { key: 'ma60',  period: 60,  color: '#b88fc8' },  // 薰衣草
+  { key: 'ma120', period: 120, color: '#5fa882' },  // 鼠尾草綠
+  { key: 'ma240', period: 240, color: '#d4a06a' },  // 淡焦糖
 ]
 
 function calcMA(candles, period) {
@@ -189,17 +189,17 @@ export default function Chart({ candles, indicators, activeTool }) {
     const chart = createChart(ct, {
       width:  ct.clientWidth,
       height: ct.clientHeight,
-      layout: { background: { color: '#131722' }, textColor: '#b2b5be' },
+      layout: { background: { color: '#1e1710' }, textColor: '#c4aa8a' },
       grid: {
-        vertLines: { color: '#1e2230' },
-        horzLines: { color: '#1e2230' },
+        vertLines: { color: 'rgba(180,148,108,0.08)' },
+        horzLines: { color: 'rgba(180,148,108,0.08)' },
       },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
-        borderColor: '#2a2e39',
+        borderColor: 'rgba(180,148,108,0.18)',
         scaleMargins: { top: 0.08, bottom: 0.24 },
       },
-      timeScale: { borderColor: '#2a2e39', timeVisible: true },
+      timeScale: { borderColor: 'rgba(180,148,108,0.18)', timeVisible: true },
     })
     S.current.chart = chart
 

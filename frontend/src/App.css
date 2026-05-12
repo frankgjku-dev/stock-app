@@ -2,36 +2,36 @@
    奶茶色系 Design Tokens
 ═══════════════════════════════════════════════════════ */
 :root {
-  /* 背景層次 — 深焙奶茶到奶泡 */
-  --bg:          #1a1510;   /* 最底：深焙咖啡底 */
-  --surface:     #221c14;   /* 卡片底：濃縮奶茶 */
-  --surface-2:   #2c2418;   /* 輸入框：中焙奶茶 */
-  --surface-3:   #362d1f;   /* hover 層：奶茶拿鐵 */
+  /* 背景層次 — 奶茶色（明亮奶油系） */
+  --bg:          #f0e6d3;   /* 最底：奶茶拿鐵 */
+  --surface:     #faf5ec;   /* 卡片：奶白 */
+  --surface-2:   #ede3cf;   /* 輸入框：米色 */
+  --surface-3:   #e4d6be;   /* hover：深米色 */
 
-  /* 邊框 — 奶白色透明感 */
-  --border:      rgba(230, 205, 170, 0.08);
-  --border-md:   rgba(230, 205, 170, 0.14);
-  --border-hi:   rgba(230, 205, 170, 0.26);
+  /* 邊框 */
+  --border:      rgba(120, 88, 48, 0.12);
+  --border-md:   rgba(120, 88, 48, 0.20);
+  --border-hi:   rgba(120, 88, 48, 0.38);
 
-  /* 文字 — 奶油到焦糖 */
-  --text-1:      #f2e8d4;   /* 主文字：溫奶白 */
-  --text-2:      #b8a48a;   /* 次文字：奶茶褐 */
-  --text-3:      #6b5840;   /* 輔文字：深焦糖 */
+  /* 文字 — 深焙到奶茶 */
+  --text-1:      #1e140a;   /* 主文字：深焙 */
+  --text-2:      #6b4f35;   /* 次文字：奶茶褐 */
+  --text-3:      #a8906b;   /* 輔文字：淡焦糖 */
 
   /* 強調色 — 焦糖 */
-  --accent:      #c8925a;
-  --accent-dim:  rgba(200, 146, 90, 0.16);
-  --accent-glow: rgba(200, 146, 90, 0.32);
+  --accent:      #b86e2a;
+  --accent-dim:  rgba(184, 110, 42, 0.14);
+  --accent-glow: rgba(184, 110, 42, 0.28);
 
   /* 漲跌色 — 台股紅漲綠跌，暖化版 */
-  --up:          #e07878;
-  --up-dim:      rgba(224, 120, 120, 0.14);
-  --down:        #7abf8a;
-  --down-dim:    rgba(122, 191, 138, 0.14);
+  --up:          #c45a4a;
+  --up-dim:      rgba(196, 90, 74, 0.12);
+  --down:        #4a9460;
+  --down-dim:    rgba(74, 148, 96, 0.12);
 
   /* 警示 */
-  --warn:        #d4a84a;
-  --warn-dim:    rgba(212, 168, 74, 0.15);
+  --warn:        #b8860a;
+  --warn-dim:    rgba(184, 134, 10, 0.14);
 
   /* 形狀 & 效果 */
   --r-sm:   6px;
@@ -221,7 +221,7 @@ body {
 .loading-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(26, 21, 16, 0.75);
+  background: rgba(240, 230, 211, 0.75);
   z-index: 10; font-size: 13px; color: var(--text-2);
   pointer-events: none; letter-spacing: 0.5px;
 }
@@ -363,7 +363,7 @@ body {
 
 .rs-badge {
   display: inline-block; padding: 3px 9px;
-  border-radius: 20px; color: #1a1510;
+  border-radius: 20px; color: #fff;
   font-weight: 700; font-size: 12px;
 }
 .pass-badge { font-weight: 700; font-size: 13px; }
