@@ -357,8 +357,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                 <SortTh k="close"     label="收盤" />
                 <SortTh k="rs_rating" label="RS" />
                 <SortTh k="passed"    label="條件" />
-                <SortTh k="vcp"       label="VCP" />
-                <th>樞紐點</th>
+                <SortTh k="vcp"       label="VCP分" />
+                <th>樞紐/買點</th>
+                <th>停損</th>
                 <th>PP</th>
                 <SortTh k="from_high" label="距高%" />
                 <SortTh k="from_ma50" label="距MA50%" />
@@ -401,29 +402,52 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                           {row.passed}/8
                         </span>
                       </td>
+                      {/* VCP 分數欄 */}
                       <td>
                         {vc
                           ? <span className="vcp-badge" style={{ background:vc.bg, color:vc.color }}
                               title={vcp.details?.join(' · ')}>
-                              {vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱'} {vcp.score}/5
-                              {/* 只在仍在整理區（dist_pivot > -8%）才顯示收縮次數
-                                  已大幅突破高點的股票，舊序列數字沒有意義 */}
+                              {vcp.label || (vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱')}
+                              {vcp.score100 != null
+                                ? <strong style={{ marginLeft:4, fontSize:12 }}>{vcp.score100}</strong>
+                                : null}
                               {vcp.contractions >= 2 && (vcp.dist_pivot == null || vcp.dist_pivot > -8)
-                                ? <span style={{ fontSize:10, marginLeft:4, opacity:0.85 }}>
-                                    {vcp.contractions}收縮{vcp.vol_contracting ? '📉' : ''}
+                                ? <span style={{ fontSize:10, marginLeft:3, opacity:0.85 }}>
+                                    {vcp.contractions}縮{vcp.vol_contracting ? '📉' : ''}
+                                    {vcp.higher_lows ? '↑' : ''}
                                   </span>
                                 : null}
                             </span>
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>
+                      {/* 樞紐點 + 買點狀態 */}
                       <td style={{ fontSize:12 }}>
                         {vcp.pivot
-                          ? <>{vcp.pivot} <span style={{
-                              color: vcp.dist_pivot <= 2 ? 'var(--down)' :
-                                     vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
-                            }}>{vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}</span>
-                            </>
+                          ? <div>
+                              <span>{vcp.pivot}</span>
+                              <span style={{
+                                marginLeft:4,
+                                color: vcp.dist_pivot <= 0 ? 'var(--down)' :
+                                       vcp.dist_pivot <= 3 ? '#ffd700' :
+                                       vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
+                              }}>
+                                {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
+                              </span>
+                              {vcp.buy_status && vcp.buy_status !== '—'
+                                ? <div style={{
+                                    fontSize:10, marginTop:2,
+                                    color: vcp.buy_status === '正式突破' ? 'var(--down)' :
+                                           vcp.buy_status === '等待'     ? '#ffd700' :
+                                           vcp.buy_status === '偷跑'     ? '#26c6da' :
+                                           vcp.buy_status === '過度延伸' ? 'var(--text-3)' : 'var(--text-2)',
+                                  }}>{vcp.buy_status}</div>
+                                : null}
+                            </div>
                           : '—'}
+                      </td>
+                      {/* 停損欄 */}
+                      <td style={{ fontSize:12, color:'var(--down)' }}>
+                        {vcp.stop_loss > 0 ? vcp.stop_loss : '—'}
                       </td>
                       <td>
                         {row.pocket_pivot
@@ -470,7 +494,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                     {/* ── 展開詳情 ── */}
                     {detail === row.symbol && (
                       <tr className="detail-row">
-                        <td colSpan={14}>
+                        <td colSpan={15}>
                           <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
 
                             {/* 選股建議卡 */}
@@ -524,15 +548,35 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                               <div className="cond-item info">MA200: {row.ma200}</div>
                               <div className="cond-item info">52w高: {row.high52}</div>
                               <div className="cond-item info">52w低: {row.low52}</div>
-                              {(vcp.score > 0) && (
+                              {(vcp.score > 0 || vcp.score100 > 0) && (
                                 <div className="vcp-detail-block">
-                                  <div className="vcp-detail-title">VCP 分析</div>
+                                  <div className="vcp-detail-title">
+                                    VCP 分析
+                                    {vcp.score100 != null &&
+                                      <span style={{ marginLeft:8, fontWeight:700,
+                                        color: vcp.score100 >= 85 ? 'var(--down)'
+                                             : vcp.score100 >= 70 ? 'var(--warn)' : 'var(--text-2)' }}>
+                                        {vcp.score100} 分
+                                        {vcp.score100 >= 85 ? '（高品質）'
+                                         : vcp.score100 >= 70 ? '（良好）' : ''}
+                                      </span>}
+                                  </div>
                                   <div className="vcp-detail-items">
                                     {(vcp.details || []).map((d, i) =>
                                       <div key={i} className="cond-item pass">✓ {d}</div>)}
                                     {vcp.atr_ratio != null &&
                                       <div className="cond-item info">ATR比值: {vcp.atr_ratio}（&lt;0.8=收縮）</div>}
                                     <div className="cond-item info">樞紐點: {vcp.pivot}（距 {vcp.dist_pivot}%）</div>
+                                    {vcp.stop_loss > 0 &&
+                                      <div className="cond-item info" style={{ color:'var(--down)' }}>
+                                        停損: {vcp.stop_loss}（{row.close > 0 ? `-${((row.close - vcp.stop_loss)/row.close*100).toFixed(1)}%` : ''}）
+                                      </div>}
+                                    {vcp.base_days > 0 &&
+                                      <div className="cond-item info">Base 長度: {vcp.base_days} 天（規格 15–65）</div>}
+                                    {vcp.higher_lows &&
+                                      <div className="cond-item pass">↑ 低點墊高（Higher Lows）</div>}
+                                    {vcp.buy_status && vcp.buy_status !== '—' &&
+                                      <div className="cond-item info">買點狀態: {vcp.buy_status}</div>}
                                   </div>
                                 </div>
                               )}

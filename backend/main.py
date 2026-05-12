@@ -139,9 +139,9 @@ def _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100, window=5, min_dep
 
 def _best_contraction_sequence(pullbacks):
     """
-    從回檔清單中找「深度遞減」的最長子序列。
-    每次回檔深度必須小於前次 × 0.85（至少縮小 15%）。
-    回傳最長子序列（list[dict]）。
+    從回檔清單中找「深度大致遞減」的最長子序列。
+    Minervini 規格：後一次回檔不得超過前一次回檔的 110%（允許小幅誤差）。
+    理想：drawdown_n <= drawdown_{n-1} * 0.75（評分時加分）
     """
     if not pullbacks:
         return []
@@ -150,7 +150,8 @@ def _best_contraction_sequence(pullbacks):
     for start in range(len(recent)):
         seq = [recent[start]]
         for j in range(start + 1, len(recent)):
-            if recent[j]["depth_pct"] < seq[-1]["depth_pct"] * 0.85:
+            # 後一次回檔不得超過前一次的 110%
+            if recent[j]["depth_pct"] <= seq[-1]["depth_pct"] * 1.10:
                 seq.append(recent[j])
         if len(seq) > len(best):
             best = seq
@@ -159,80 +160,137 @@ def _best_contraction_sequence(pullbacks):
 
 def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -> dict:
     """
-    VCP 完整偵測：
-    ① 5 項量化指標評分（0–5 分）
-    ② 真正的回檔序列偵測（2–6 次深度遞減）
-    ③ Pivot Point = 最後一次收縮的高點（最精確定義）
+    VCP 完整偵測（按 Minervini 規格）
+
+    評分系統（100 分制，部分分由此函式計算）：
+      VCP 結構 30 分 + 量能 20 分 + 突破準備 10 分 = 此函式最高 60 分
+      趨勢 25 分：由 check_trend_template() 追加
+      強勢 15 分：由 run_scan() 追加（RS 排名確定後）
+
+    新增輸出欄位：
+      score100   - 部分分（0-60），外層追加後會到 100
+      stop_loss  - min(最後收縮低點, pivot * 0.93)
+      buy_status - 等待 / 偷跑 / 正式突破 / 過度延伸 / 整理中
+      base_days  - base 長度（交易日）
+      higher_lows - 低點是否墊高
     """
     empty = {
-        "score": 0, "label": "", "pivot": 0.0, "dist_pivot": 0.0,
+        "score": 0, "score100": 0, "label": "",
+        "pivot": 0.0, "dist_pivot": 0.0,
         "atr_ratio": None, "days_below_pivot": 0, "details": [],
         "contractions": 0, "contraction_depths": [], "vol_contracting": False,
-        "last_depth_pct": 0.0,
+        "last_depth_pct": 0.0, "stop_loss": 0.0,
+        "buy_status": "—", "base_days": 0, "higher_lows": False,
     }
     if len(df) < 60:
         return empty
 
-    h = df["High"].values.astype(float)
-    l = df["Low"].values.astype(float)
-    v = df["Volume"].values.astype(float)
+    h     = df["High"].values.astype(float)
+    l     = df["Low"].values.astype(float)
+    c_arr = df["Close"].values.astype(float)
+    v     = df["Volume"].values.astype(float)
 
-    score, details = 0, []
-
-    # ① 高位整理
-    if cur_close >= ma50 and cur_close >= high52 * 0.75:
-        score += 1; details.append("高位整理")
-
-    # ② ATR 波動收縮
-    atr20     = float(np.mean(h[-20:] - l[-20:])) if len(h) >= 20 else 0.0
-    atr60     = float(np.mean(h[-60:] - l[-60:])) if len(h) >= 60 else atr20
-    atr_ratio = round(atr20 / atr60, 2) if atr60 > 0 else 1.0
-    if atr60 > 0 and atr_ratio < 0.80:
-        score += 1; details.append(f"波動收縮({atr_ratio})")
-
-    # ③ 量能萎縮（近20日均量 < 近50日 × 0.75）
-    vol20 = float(np.mean(v[-20:])) if len(v) >= 20 else 0.0
-    vol50 = float(np.mean(v[-50:])) if len(v) >= 50 else vol20
-    if vol50 > 0 and vol20 / vol50 < 0.75:
-        score += 1; details.append("量能萎縮")
-
-    # ④ 近10日緊密整理（高低差 < 8%）
-    if len(h) >= 10:
-        tight = (float(max(h[-10:])) - float(min(l[-10:]))) / cur_close
-        if tight < 0.08:
-            score += 1; details.append(f"緊密整理({tight*100:.1f}%)")
-
-    # ⑤ 健康回檔（近30日高低差 3–15%）
-    if len(h) >= 30:
-        pb30 = (float(max(h[-30:])) - float(min(l[-30:]))) / float(max(h[-30:]))
-        if 0.03 < pb30 < 0.15:
-            score += 1; details.append(f"健康回檔({pb30*100:.1f}%)")
-
-    # ══ 真正的回檔序列偵測 ══════════════════════════════════
+    # ══ 回檔序列偵測 ═══════════════════════════════════════════
     all_pbs  = _find_pullback_sequence(h, l, v)
     vcp_seq  = _best_contraction_sequence(all_pbs)
     num_cont = len(vcp_seq)
     depths   = [pb["depth_pct"] for pb in vcp_seq]
+    max_depth  = max(depths) if depths else 0.0
+    last_depth = depths[-1]  if depths else 100.0
 
-    # 量能是否也逐步遞減
-    vol_contracting = (
-        num_cont >= 2 and
-        all(vcp_seq[i]["avg_vol"] >= vcp_seq[i + 1]["avg_vol"]
-            for i in range(num_cont - 1))
-    )
+    # 最大回檔 > 35% → 不符合 VCP 規格，整個序列作廢
+    if max_depth > 35:
+        vcp_seq = []; num_cont = 0; depths = []; max_depth = 0.0; last_depth = 100.0
 
-    # 回檔序列評分加成（最高仍 5 分）
-    if 2 <= num_cont <= 6:
-        details.append(f"回檔序列{num_cont}次({'>'.join(str(d)+'%' for d in depths)})")
-        score = min(score + 1, 5)
-    if vol_contracting:
-        details.append("量能逐步遞減"); score = min(score + 1, 5)
+    # ── Base 長度 ──────────────────────────────────────────────
+    base_days = 0
+    if vcp_seq:
+        base_days = int(vcp_seq[-1]["trough_idx"] - vcp_seq[0]["peak_idx"])
+    base_valid = 15 <= base_days <= 65
 
-    last_depth_pct = vcp_seq[-1]["depth_pct"] if vcp_seq else 0.0
+    # ── 低點墊高（Higher Lows）────────────────────────────────
+    higher_lows = False
+    if num_cont >= 2:
+        troughs = [pb["trough"] for pb in vcp_seq]
+        higher_lows = all(troughs[i] >= troughs[i-1] * 0.97
+                          for i in range(1, len(troughs)))
 
-    # ══ Pivot Point ════════════════════════════════════════
-    # 優先使用最後一次收縮的高點（Minervini 定義）
-    # 次之：5–45 日前最高點（保底）
+    # ── ATR ───────────────────────────────────────────────────
+    atr10     = float(np.mean(h[-10:] - l[-10:])) if len(h) >= 10 else 0.0
+    atr50     = float(np.mean(h[-50:] - l[-50:])) if len(h) >= 50 else atr10
+    atr_ratio = round(atr10 / atr50, 2) if atr50 > 0 else 1.0
+
+    # ── 量能統計 ──────────────────────────────────────────────
+    vol5  = float(np.mean(v[-5:]))  if len(v) >= 5  else float(np.mean(v))
+    vol20 = float(np.mean(v[-20:])) if len(v) >= 20 else float(np.mean(v))
+    vol50 = float(np.mean(v[-50:])) if len(v) >= 50 else vol20
+    vol5_ratio = round(vol5 / vol50, 2) if vol50 > 0 else 1.0
+
+    # 後半段 vs 前半段量
+    vol_second_half_lt_first = False
+    if num_cont >= 2:
+        mid    = max(1, num_cont // 2)
+        fh_vol = float(np.mean([pb["avg_vol"] for pb in vcp_seq[:mid]]))
+        sh_vol = float(np.mean([pb["avg_vol"] for pb in vcp_seq[mid:]]))
+        vol_second_half_lt_first = sh_vol < fh_vol
+    elif len(v) >= 40:
+        vol_second_half_lt_first = float(np.mean(v[-20:])) < float(np.mean(v[-40:-20]))
+
+    # 下跌日量縮（近10日黑K均量 < 50日均量）
+    down_day_vol_ok = False
+    if len(df) >= 10 and vol50 > 0:
+        recent10  = df.iloc[-10:]
+        down_days = recent10[recent10["Close"] < recent10["Open"]]
+        if not down_days.empty:
+            down_day_vol_ok = float(down_days["Volume"].mean()) < vol50
+
+    # ══ 100 分制（部分：VCP結構30 + 量能20 + 突破準備10 = 60）═══
+    s100    = 0
+    details = []
+
+    # ── VCP 結構（30 分）──────────────────────────────────────
+    struct = 0
+    if 2 <= num_cont <= 6:                            # 2–6 次收縮：8分
+        struct += 8
+        details.append(f"收縮{num_cont}次({'>'.join(str(d)+'%' for d in depths)})")
+    if num_cont >= 2:
+        ideal_dec  = all(depths[i] <= depths[i-1] * 0.75  for i in range(1, len(depths)))
+        strict_dec = all(depths[i] <  depths[i-1]          for i in range(1, len(depths)))
+        if ideal_dec:
+            struct += 10; details.append("回檔遞減(理想≤75%)")
+        elif strict_dec:
+            struct +=  7; details.append("回檔遞減(嚴格)")
+        else:
+            struct +=  4; details.append("回檔大致遞減")
+    if higher_lows:                                   # 低點墊高：6分
+        struct += 6; details.append("低點墊高")
+    if last_depth < 8:                                # 最後收縮深度：6分
+        struct += 6; details.append(f"末段收縮{last_depth:.1f}%(<8%理想)")
+    elif last_depth < 10:
+        struct += 4; details.append(f"末段收縮{last_depth:.1f}%(<10%)")
+    elif last_depth < 12:
+        struct += 2; details.append(f"末段收縮{last_depth:.1f}%(<12%)")
+    if base_valid:                                    # Base 長度加成：2分
+        struct = min(struct + 2, 30)
+    s100 += min(struct, 30)
+
+    # ── 量能（20 分）──────────────────────────────────────────
+    vol_s = 0
+    if vol_second_half_lt_first:                      # 後半段量縮：7分
+        vol_s += 7; details.append("後半段量縮")
+    if vol5_ratio <= 0.50:                            # 最後5日量乾：8分
+        vol_s += 8; details.append(f"量極乾({vol5_ratio:.0%})")
+    elif vol5_ratio <= 0.70:
+        vol_s += 5; details.append(f"量乾({vol5_ratio:.0%})")
+    elif vol5_ratio <= 0.85:
+        vol_s += 2
+    if down_day_vol_ok:                               # 下跌日量縮：5分
+        vol_s += 5; details.append("下跌日量縮")
+    s100 += min(vol_s, 20)
+
+    vol_contracting = vol_second_half_lt_first
+
+    # ══ Pivot Point（最後收縮的高點）════════════════════════════
     if vcp_seq:
         pivot = round(vcp_seq[-1]["peak"], 2)
     else:
@@ -241,24 +299,88 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         pivot_h  = h[ph_start:ph_end]
         pivot    = round(float(max(pivot_h)) if len(pivot_h) > 0 else cur_close, 2)
 
-    dist_piv         = round((pivot - cur_close) / pivot * 100, 1)
-    recent_c         = df["Close"].values[-20:] if len(df) >= 20 else df["Close"].values
+    dist_piv = round((pivot - cur_close) / pivot * 100, 1) if pivot > 0 else 0.0
+
+    # ── 突破準備（10 分）──────────────────────────────────────
+    break_s = 0
+    if 0 <= dist_piv <= 3:
+        break_s += 5; details.append(f"距pivot {dist_piv}%")
+    elif 0 <= dist_piv <= 5:
+        break_s += 3
+    if atr_ratio < 0.70:
+        break_s += 5; details.append(f"ATR收縮({atr_ratio})")
+    elif atr_ratio < 0.80:
+        break_s += 3; details.append(f"ATR收縮({atr_ratio})")
+    s100 += min(break_s, 10)
+
+    # ══ 停損價 = min(最後收縮低點, pivot × 0.93) ════════════════
+    if vcp_seq:
+        stop_loss = round(min(float(vcp_seq[-1]["trough"]), pivot * 0.93), 2)
+    else:
+        stop_loss = round(pivot * 0.93, 2)
+
+    # ══ days_below_pivot ═══════════════════════════════════════
+    recent_c         = c_arr[-20:] if len(c_arr) >= 20 else c_arr
     days_below_pivot = int(sum(1 for x in recent_c if float(x) < pivot))
-    label            = ("VCP強" if score >= 4 else "VCP中" if score >= 3 else
-                        "VCP弱" if score >= 2 else "")
+
+    # ══ 買點狀態 ═══════════════════════════════════════════════
+    today_close = float(c_arr[-1])
+    vol_today   = float(v[-1])
+
+    # 偷跑：突破最後 5 日小平台（但尚未突破主 pivot）
+    mini_break = (len(h) >= 5 and
+                  today_close > float(max(h[-5:-1])) and
+                  today_close < pivot)
+
+    if today_close > pivot * 1.05:
+        buy_status = "過度延伸"
+    elif today_close > pivot and vol50 > 0 and vol_today >= vol50 * 1.5:
+        buy_status = "正式突破"
+    elif today_close > pivot:
+        buy_status = "突破（量不足）"
+    elif mini_break and num_cont >= 2:
+        buy_status = "偷跑"
+    elif 0 <= dist_piv <= 5 and num_cont >= 2:
+        buy_status = "等待"
+    elif num_cont >= 2:
+        buy_status = "整理中"
+    else:
+        buy_status = "—"
+
+    # ══ 5 分制標籤（向後兼容，後續 run_scan 會更新）════════════
+    # 此時 s100 最高 60，等外層追加趨勢(25)+RS(15)後才是完整 100 分
+    if s100 >= 50 and num_cont >= 2:
+        score5 = 5
+    elif s100 >= 38 and num_cont >= 2:
+        score5 = 4
+    elif s100 >= 25 and num_cont >= 2:
+        score5 = 3
+    elif s100 >= 15 and num_cont >= 1:
+        score5 = 2
+    else:
+        score5 = 1 if (atr_ratio < 0.80 or vol5_ratio < 0.75) else 0
+
+    label = ("VCP強" if score5 >= 4 else
+             "VCP中" if score5 >= 3 else
+             "VCP弱" if score5 >= 2 else "")
 
     return {
-        "score":             score,
-        "label":             label,
-        "pivot":             pivot,
-        "dist_pivot":        dist_piv,
-        "atr_ratio":         atr_ratio,
-        "days_below_pivot":  days_below_pivot,
-        "details":           details,
-        "contractions":      num_cont,
+        "score":              score5,
+        "score100":           s100,          # 部分分（max 60），外層追加後→100
+        "label":              label,
+        "pivot":              pivot,
+        "dist_pivot":         dist_piv,
+        "atr_ratio":          atr_ratio,
+        "days_below_pivot":   days_below_pivot,
+        "details":            details,
+        "contractions":       num_cont,
         "contraction_depths": depths,
-        "vol_contracting":   vol_contracting,
-        "last_depth_pct":    last_depth_pct,
+        "vol_contracting":    vol_contracting,
+        "last_depth_pct":     last_depth,
+        "stop_loss":          stop_loss,
+        "buy_status":         buy_status,
+        "base_days":          base_days,
+        "higher_lows":        higher_lows,
     }
 
 
@@ -310,6 +432,17 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
     vcp     = detect_vcp(df, c, m50, high52)
     pp      = detect_pocket_pivot(df)
 
+    # ── 追加趨勢分 25 分到 vcp.score100 ─────────────────────────
+    trend_score = (
+        (5 if c > m50           else 0) +
+        (5 if m50  > m150       else 0) +
+        (5 if m150 > m200       else 0) +
+        (5 if ma200_up          else 0) +
+        (5 if c >= high52 * 0.85 else 0)   # 接近 52 週高點
+    )
+    vcp["score100"]    += trend_score
+    vcp["trend_score"]  = trend_score
+
     return {
         "symbol":    code,
         "name":      name,
@@ -352,16 +485,23 @@ def generate_recommendation(r: dict) -> dict:
     pivot            = vcp.get("pivot")
     dist_piv         = vcp.get("dist_pivot")
     vcp_score        = vcp.get("score", 0)
+    vcp_score100     = vcp.get("score100", 0)
     days_below_pivot = vcp.get("days_below_pivot", 0)
-    contractions     = vcp.get("contractions", 0)        # 實際回檔次數
-    depths           = vcp.get("contraction_depths", []) # 各次深度清單
+    contractions     = vcp.get("contractions", 0)
+    depths           = vcp.get("contraction_depths", [])
     vol_contracting  = vcp.get("vol_contracting", False)
     last_depth_pct   = vcp.get("last_depth_pct", 0.0)
+    vcp_stop_loss    = vcp.get("stop_loss")              # VCP 算出的停損價
+    buy_status       = vcp.get("buy_status", "—")
+    higher_lows      = vcp.get("higher_lows", False)
+    base_days        = vcp.get("base_days", 0)
+
     # 組合 VCP 描述文字（用於 reason）
-    vcp_desc = (f"VCP{vcp_score}/5，{contractions}次收縮({'>'.join(str(d)+'%' for d in depths)})"
+    vcp_desc = (f"VCP{vcp_score100}分，{contractions}次收縮({'>'.join(str(d)+'%' for d in depths)})"
                 f"{'，量能遞減' if vol_contracting else ''}"
+                f"{'，低點墊高' if higher_lows else ''}"
                 if contractions >= 2
-                else f"VCP{vcp_score}/5")
+                else f"VCP{vcp_score100}分")
 
     def make(action, label, urgency, reason, setup="",
              entry=None, stop=None, target=None, rr=None):
@@ -391,90 +531,111 @@ def generate_recommendation(r: dict) -> dict:
             setup="過度延伸",
         )
 
-    # ── 1. Pocket Pivot（最高優先）──────────────────────────
-    # 需要：PP + VCP ≥ 3 + 實際回檔序列 ≥ 2 次 + RS ≥ 65 + 整理 ≥ 8 天
-    if pp and vcp_score >= 3 and contractions >= 2 and rs >= 65 and days_below_pivot >= 8:
-        stop = close * 0.925
-        tgt  = close + (close - stop) * 2.5
-        return make(
-            "buy_now", "🚀 可考慮進場", "high",
-            f"Pocket Pivot！量能突破過去10日黑K最大量。"
-            f"{vcp_desc}，RS {rs:.0f}，整理{days_below_pivot}/20天，距MA50 {from_ma50:.1f}%。"
-            f"最後收縮深度 {last_depth_pct:.1f}%（規格 < 10%）。"
-            f"進場 {close}，停損 {round(stop,2)}（{round((close-stop)/close*100,1)}%），"
-            f"目標 {round(tgt,2)}（2.5:1）。",
-            setup=f"Pocket Pivot + {vcp_desc}",
-            entry=close, stop=stop, target=tgt, rr=2.5,
-        )
+    # ── 停損基準：優先用 VCP 算出的精確停損，次之 pivot*0.93 ──
+    def _stop(entry_price):
+        if vcp_stop_loss and vcp_stop_loss > 0:
+            return vcp_stop_loss
+        return round(entry_price * 0.925, 2)
 
-    # ── 2. 剛突破樞紐點（pivot 上方 0–5%）──────────────────
-    # 需要：VCP ≥ 3 + 回檔 ≥ 2 次 + RS ≥ 60 + 整理 ≥ 8 天
-    if (pivot and dist_piv is not None and -5 <= dist_piv < 0
-            and vcp_score >= 3 and contractions >= 2 and rs >= 60 and days_below_pivot >= 8):
-        entry = pivot * 1.003
-        stop  = pivot * 0.925
+    # ── 1. 正式突破（最高優先）──────────────────────────────
+    # buy_status == '正式突破'：Close > pivot + 放量 ≥ 50日均量×1.5
+    if buy_status == "正式突破" and contractions >= 2 and rs >= 60:
+        entry = close
+        stop  = _stop(entry)
         tgt   = entry + (entry - stop) * 2.5
+        stop_pct = round((entry - stop) / entry * 100, 1)
         return make(
-            "buy_now", "🟢 剛突破，可進場", "high",
-            f"剛突破樞紐 {pivot}（超出 {abs(dist_piv):.1f}%）。"
-            f"{vcp_desc}，RS {rs:.0f}，整理{days_below_pivot}/20天。"
-            f"最後收縮深度 {last_depth_pct:.1f}%（規格 < 10%）。"
-            f"進場 ≤ {round(entry,2)}，停損 {round(stop,2)}（{round((entry-stop)/entry*100,1)}%），目標 {round(tgt,2)}。",
-            setup=f"VCP突破({vcp_score}/5)",
+            "buy_now", "🟢 正式突破，可進場", "high",
+            f"放量突破樞紐 {pivot}！{vcp_desc}，RS {rs:.0f}。"
+            f"進場 {round(entry,2)}，停損 {round(stop,2)}（-{stop_pct}%），"
+            f"目標 {round(tgt,2)}（2.5:1）。買入區間 ≤ {round(pivot*1.05,2)}（超過5%不追）。",
+            setup=f"VCP正式突破({vcp_score100}分)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 3. 即將突破（距樞紐 0–3%）──────────────────────────
-    # 需要：VCP ≥ 3 + 回檔 ≥ 2 次 + RS ≥ 60 + 整理 ≥ 8 天
+    # ── 2. Pocket Pivot（偷跑進場）──────────────────────────
+    if pp and contractions >= 2 and rs >= 65 and days_below_pivot >= 8:
+        entry = close
+        stop  = _stop(entry)
+        tgt   = entry + (entry - stop) * 2.5
+        stop_pct = round((entry - stop) / entry * 100, 1)
+        return make(
+            "buy_now", "🚀 Pocket Pivot 偷跑", "high",
+            f"今日紅K量超過過去10日所有黑K最大量。{vcp_desc}，RS {rs:.0f}，"
+            f"末段收縮 {last_depth_pct:.1f}%，整理{days_below_pivot}/20天。"
+            f"進場 {round(entry,2)}，停損 {round(stop,2)}（-{stop_pct}%），"
+            f"目標 {round(tgt,2)}（2.5:1）。停損距離需 ≤ 5%。",
+            setup=f"Pocket Pivot({vcp_score100}分)",
+            entry=entry, stop=stop, target=tgt, rr=2.5,
+        )
+
+    # ── 3. 偷跑（突破小平台）───────────────────────────────
+    if buy_status == "偷跑" and contractions >= 2 and rs >= 65:
+        entry = close
+        stop  = _stop(entry)
+        stop_pct = round((entry - stop) / entry * 100, 1)
+        if stop_pct <= 5:   # 停損距離必須 ≤ 5%
+            tgt = entry + (entry - stop) * 2.5
+            return make(
+                "buy_now", "🔔 偷跑買點", "high",
+                f"突破最後5日小平台。{vcp_desc}，RS {rs:.0f}，樞紐 {pivot}（距 {dist_piv}%）。"
+                f"進場 {round(entry,2)}，停損 {round(stop,2)}（-{stop_pct}%），"
+                f"目標 {round(tgt,2)}（2.5:1）。",
+                setup=f"偷跑({vcp_score100}分)",
+                entry=entry, stop=stop, target=tgt, rr=2.5,
+            )
+
+    # ── 4. 等待突破（距樞紐 0–3%）──────────────────────────
     if (pivot and dist_piv is not None and 0 <= dist_piv <= 3
-            and vcp_score >= 3 and contractions >= 2 and rs >= 60 and days_below_pivot >= 8):
+            and vcp_score100 >= 55 and contractions >= 2 and rs >= 60 and days_below_pivot >= 8):
         entry = pivot * 1.003
-        stop  = pivot * 0.925
+        stop  = _stop(entry)
         tgt   = entry + (entry - stop) * 2.5
+        stop_pct = round((entry - stop) / entry * 100, 1)
         return make(
-            "breakout", "🔔 即將突破", "high",
+            "breakout", "🔔 即將突破，等放量", "high",
             f"距樞紐點 {pivot} 僅 {dist_piv}%，整理{days_below_pivot}/20天。"
-            f"{vcp_desc}，RS {rs:.0f}，最後收縮深度 {last_depth_pct:.1f}%。"
-            f"突破放量（≥50日均量×1.5）後掛單 {round(entry,2)}，"
-            f"停損 {round(stop,2)}，目標 {round(tgt,2)}（2.5:1）。",
-            setup=f"VCP({vcp_score}/5)",
+            f"{vcp_desc}，RS {rs:.0f}，末段收縮 {last_depth_pct:.1f}%。"
+            f"突破放量（≥50日均量×1.5）後掛單 ≤ {round(pivot*1.005,2)}，"
+            f"停損 {round(stop,2)}（-{stop_pct}%），目標 {round(tgt,2)}（2.5:1）。",
+            setup=f"VCP等待突破({vcp_score100}分)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 4. 設置提醒（距樞紐 3–8%）──────────────────────────
+    # ── 5. 設置提醒（距樞紐 3–8%）──────────────────────────
     if (pivot and dist_piv is not None and 3 < dist_piv <= 8
-            and vcp_score >= 2 and rs >= 55):
+            and vcp_score100 >= 45 and contractions >= 2 and rs >= 55):
         entry = pivot * 1.003
-        stop  = pivot * 0.925
+        stop  = _stop(entry)
         tgt   = entry + (entry - stop) * 2.5
-        cont_note = f"，回檔序列{contractions}次" if contractions >= 2 else "，尚未形成完整VCP序列"
         return make(
             "set_alert", "⏰ 設置突破提醒", "medium",
-            f"距樞紐點 {pivot} 約 {dist_piv}%，VCP{vcp_score}/5{cont_note}，RS {rs:.0f}，整理接近尾聲。"
-            f"設 {round(entry,2)} 價格提醒，突破放量後進場，停損 {round(stop,2)}，目標 {round(tgt,2)}。",
-            setup=f"VCP({vcp_score}/5)",
+            f"距樞紐點 {pivot} 約 {dist_piv}%，{vcp_desc}，RS {rs:.0f}。"
+            f"設 {round(pivot*1.005,2)} 價格提醒，放量（×1.5）進場，"
+            f"停損 {round(stop,2)}，目標 {round(tgt,2)}。",
+            setup=f"VCP({vcp_score100}分)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 5. 整理觀察（距樞紐 8–25%）──────────────────────────
-    if pivot and dist_piv is not None and 8 < dist_piv <= 25 and vcp_score >= 2:
+    # ── 6. 整理觀察（距樞紐 8–25%）──────────────────────────
+    if pivot and dist_piv is not None and 8 < dist_piv <= 25 and contractions >= 2:
         entry = pivot * 1.003
-        stop  = pivot * 0.925
+        stop  = _stop(entry)
         tgt   = entry + (entry - stop) * 2.5
         return make(
             "watch", "👀 整理觀察", "low",
-            f"VCP 整理中，距樞紐點 {dist_piv}%。{vcp_desc}，RS {rs:.0f}，距MA50 {from_ma50:.1f}%。"
+            f"VCP 整理中，距樞紐點 {dist_piv}%，{vcp_desc}，RS {rs:.0f}，距MA50 {from_ma50:.1f}%。"
             f"耐心等待波動收縮完成（目標進場 {round(entry,2)}）。",
-            setup=f"VCP({vcp_score}/5)",
+            setup=f"VCP({vcp_score100}分)",
             entry=entry, stop=stop, target=tgt, rr=2.5,
         )
 
-    # ── 6. 已突破過遠（> 5% 以上）────────────────────────
+    # ── 7. 已突破過遠（> 5%）─────────────────────────────
     if pivot and dist_piv is not None and dist_piv < -5:
-        ma50_price = round(close / (1 + from_ma50 / 100), 2)
+        ma50_price = round(close / (1 + from_ma50 / 100), 2) if from_ma50 else 0
         return make(
             "extended", "⚠️ 突破後勿追高", "low",
-            f"已突破樞紐 {pivot}（距高 {from_high}%），超出進場窗口。"
+            f"已突破樞紐 {pivot}（超出進場窗口5%），目前距高 {from_high}%。"
             f"等待回測 MA50（約 {ma50_price}）量縮整理後再評估。",
             setup="突破後延伸",
         )
@@ -557,6 +718,29 @@ async def run_scan():
         for r in raw_results:
             pct = float(np.sum(raws <= r["rs_raw"]) / len(raws) * 99)
             r["rs_rating"] = round(pct, 1)
+
+        # ── 追加 RS 強勢分 15 分，更新 score100 + label ──────────
+        for r in raw_results:
+            rs  = r["rs_rating"]
+            vcp = r.get("vcp", {})
+            strength_score = 15 if rs >= 80 else (8 if rs >= 70 else 0)
+            s100 = min(vcp.get("score100", 0) + strength_score, 100)
+            vcp["score100"]       = s100
+            vcp["strength_score"] = strength_score
+
+            # 以完整 100 分重新決定 label / score（0-5）
+            nc = vcp.get("contractions", 0)
+            if s100 >= 85 and nc >= 2:
+                vcp["score"] = 5; vcp["label"] = "VCP強"
+            elif s100 >= 70 and nc >= 2:
+                vcp["score"] = 4; vcp["label"] = "VCP中"
+            elif s100 >= 55 and nc >= 2:
+                vcp["score"] = 3; vcp["label"] = "VCP弱"
+            elif s100 < 40 or nc < 2:
+                vcp["score"] = min(vcp.get("score", 0), 1)
+                vcp["label"] = ""
+            r["vcp"] = vcp
+
         # 生成選股建議（rs_rating 已確定後才呼叫）
         for r in raw_results:
             r["recommendation"] = generate_recommendation(r)
