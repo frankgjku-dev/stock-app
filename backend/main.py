@@ -139,9 +139,9 @@ def _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100, window=5, min_dep
 
 def _best_contraction_sequence(pullbacks):
     """
-    從回檔清單中找「深度大致遞減」的最長子序列。
-    Minervini 規格：後一次回檔不得超過前一次回檔的 110%（允許小幅誤差）。
-    理想：drawdown_n <= drawdown_{n-1} * 0.75（評分時加分）
+    從回檔清單中找「深度遞減」的最長子序列。
+    Minervini 核心規則：每次回檔深度大約減半（≈50%），例如 25%→12%→6%。
+    序列納入標準：後一次深度 ≤ 前一次 × 0.90（允許 10% 誤差，確保方向正確）。
     """
     if not pullbacks:
         return []
@@ -150,8 +150,8 @@ def _best_contraction_sequence(pullbacks):
     for start in range(len(recent)):
         seq = [recent[start]]
         for j in range(start + 1, len(recent)):
-            # 後一次回檔不得超過前一次的 110%
-            if recent[j]["depth_pct"] <= seq[-1]["depth_pct"] * 1.10:
+            # 後一次回檔不得超過前一次的 90%（必須有縮小趨勢）
+            if recent[j]["depth_pct"] <= seq[-1]["depth_pct"] * 0.90:
                 seq.append(recent[j])
         if len(seq) > len(best):
             best = seq
@@ -254,14 +254,18 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         struct += 8
         details.append(f"收縮{num_cont}次({'>'.join(str(d)+'%' for d in depths)})")
     if num_cont >= 2:
-        ideal_dec  = all(depths[i] <= depths[i-1] * 0.75  for i in range(1, len(depths)))
+        # 減半規則：每次深度 ≤ 前次 × 0.55（≈減半，例如 25%→12%→6%）
+        halving    = all(depths[i] <= depths[i-1] * 0.55  for i in range(1, len(depths)))
+        # 良好：每次深度 ≤ 前次 × 0.75（縮小 25% 以上）
+        good_dec   = all(depths[i] <= depths[i-1] * 0.75  for i in range(1, len(depths)))
+        # 可接受：嚴格遞減（每次比前次小，但縮減比例不限）
         strict_dec = all(depths[i] <  depths[i-1]          for i in range(1, len(depths)))
-        if ideal_dec:
-            struct += 10; details.append("回檔遞減(理想≤75%)")
+        if halving:
+            struct += 10; details.append(f"深度減半({'>'.join(str(d)+'%' for d in depths)})")
+        elif good_dec:
+            struct +=  7; details.append(f"回檔遞減良好({'>'.join(str(d)+'%' for d in depths)})")
         elif strict_dec:
-            struct +=  7; details.append("回檔遞減(嚴格)")
-        else:
-            struct +=  4; details.append("回檔大致遞減")
+            struct +=  4; details.append(f"回檔遞減({'>'.join(str(d)+'%' for d in depths)})")
     if higher_lows:                                   # 低點墊高：6分
         struct += 6; details.append("低點墊高")
     if last_depth < 8:                                # 最後收縮深度：6分
