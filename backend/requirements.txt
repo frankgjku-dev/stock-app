@@ -3,4 +3,5 @@ uvicorn[standard]
 httpx
 yfinance
 pandas
+numpy
 pytz
