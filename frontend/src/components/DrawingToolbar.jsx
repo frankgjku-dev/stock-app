@@ -1,6 +1,8 @@
+import { useRef } from 'react'
+
 const TOOLS = [
   { id: 'cursor',     icon: '↖',  label: '選取 / 移動 (Esc 取消選取)' },
-  null, // separator
+  null,
   { id: 'trendline',  icon: '↗',  label: '趨勢線：點兩下定端點，雙向延伸' },
   { id: 'ray',        icon: '→',  label: '射線：點兩下，單向延伸' },
   { id: 'horizontal', icon: '—',  label: '水平線：點一下即完成' },
@@ -9,7 +11,19 @@ const TOOLS = [
   { id: 'fibonacci',  icon: '≋',  label: '斐波那契回調：點兩下定高低點' },
 ]
 
-export default function DrawingToolbar({ activeTool, onToolChange, onClearAll }) {
+const PRESET_COLORS = [
+  { hex: '#b86e2a', label: '焦糖' },
+  { hex: '#c85a50', label: '暖紅' },
+  { hex: '#4a9468', label: '草綠' },
+  { hex: '#5a8ec8', label: '天藍' },
+  { hex: '#9068b8', label: '薰衣草' },
+  { hex: '#c8a030', label: '金黃' },
+  { hex: '#1e140a', label: '深焙' },
+]
+
+export default function DrawingToolbar({ activeTool, onToolChange, onClearAll, drawColor = '#b86e2a', onColorChange }) {
+  const colorInputRef = useRef(null)
+
   return (
     <div className="drawing-toolbar">
       {TOOLS.map((t, i) =>
@@ -38,6 +52,40 @@ export default function DrawingToolbar({ activeTool, onToolChange, onClearAll })
       >
         🗑
       </button>
+
+      <div className="tool-sep" />
+
+      {/* ── 畫線顏色 ── */}
+      <div className="color-section" title="畫線顏色">
+        {/* 預設色塊 */}
+        {PRESET_COLORS.map(({ hex, label }) => (
+          <button
+            key={hex}
+            className={`color-swatch ${drawColor === hex ? 'active' : ''}`}
+            style={{ '--swatch-color': hex }}
+            title={label}
+            onClick={() => onColorChange(hex)}
+          />
+        ))}
+
+        {/* 自訂色 */}
+        <button
+          className="color-swatch color-swatch-custom"
+          title="自訂顏色"
+          style={{ '--swatch-color': drawColor }}
+          onClick={() => colorInputRef.current?.click()}
+        >
+          <span className="color-swatch-plus">＋</span>
+        </button>
+        <input
+          ref={colorInputRef}
+          type="color"
+          value={drawColor}
+          onChange={e => onColorChange(e.target.value)}
+          style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+          tabIndex={-1}
+        />
+      </div>
     </div>
   )
 }

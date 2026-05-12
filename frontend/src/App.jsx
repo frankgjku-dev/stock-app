@@ -29,6 +29,7 @@ export default function App() {
   const [interval,   setInterval]   = useState('1d')
   const [period,     setPeriod]     = useState('1y')
   const [activeTool, setActiveTool] = useState('cursor')
+  const [drawColor,  setDrawColor]  = useState('#b86e2a')
   const [indicators, setIndicators] = useState({
     ma5: true, ma10: true, ma20: true, ma60: true, ma120: false, ma240: false,
   })
@@ -113,6 +114,8 @@ export default function App() {
             activeTool={activeTool}
             onToolChange={setActiveTool}
             onClearAll={() => chartClearRef.current?.()}
+            drawColor={drawColor}
+            onColorChange={setDrawColor}
           />
           <div className="chart-area">
             <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />
@@ -122,6 +125,7 @@ export default function App() {
                 candles={candles}
                 indicators={indicators}
                 activeTool={activeTool}
+                drawColor={drawColor}
                 clearRef={chartClearRef}
               />
             </div>

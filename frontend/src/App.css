@@ -198,6 +198,49 @@ body {
 .tool-btn:hover  { background: var(--surface-2); color: var(--text-1); }
 .tool-btn.active { background: var(--accent-dim); color: var(--accent); }
 
+/* ── Color Section ────────────────────────────────────── */
+.color-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+}
+.color-swatch {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--swatch-color, #b86e2a);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--trans), border-color var(--trans), box-shadow var(--trans);
+  flex-shrink: 0;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.color-swatch:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.color-swatch.active {
+  border-color: var(--text-1);
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.color-swatch-custom {
+  background: conic-gradient(
+    #c85a50 0% 14%, #c8a030 14% 28%, #4a9468 28% 42%,
+    #5a8ec8 42% 57%, #9068b8 57% 71%, #b86e2a 71% 85%, #1e140a 85% 100%
+  );
+}
+.color-swatch-plus {
+  font-size: 11px;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* ── Indicator Bar ───────────────────────────────────── */
 .indicator-bar {
   display: flex; align-items: center; gap: 6px;
