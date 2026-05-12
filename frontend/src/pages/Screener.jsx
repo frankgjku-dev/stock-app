@@ -48,6 +48,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   const [results,   setResults]   = useState([])
   const [progress,  setProgress]  = useState(0)
   const [total,     setTotal]     = useState(0)
+  const [universe,  setUniverse]  = useState(null)   // { count, source }
   const [minRS,     setMinRS]     = useState(70)
   const [minPassed, setMinPassed] = useState(6)
   const [vcpOnly,   setVcpOnly]   = useState(false)
@@ -67,6 +68,8 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   useEffect(() => {
     fetch(`${API_BASE}/api/market/status`)
       .then(r => r.json()).then(d => !d.error && setMarket(d)).catch(() => {})
+    fetch(`${API_BASE}/api/screener/universe`)
+      .then(r => r.json()).then(d => setUniverse(d)).catch(() => {})
   }, [])
 
   function startPoll() {
@@ -196,6 +199,11 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
           {status === 'running' ? `掃描中… ${progress}/${total}`
             : status === 'done' ? '重新掃描' : '開始掃描'}
         </button>
+        {universe && (
+          <span className="universe-badge" title={`資料來源：${universe.source}`}>
+            📊 {universe.source === 'TWSE+TPEX' ? '全市場' : '內建清單'} {universe.count} 檔
+          </span>
+        )}
 
         {status === 'running' && (
           <div className="progress-bar">

@@ -46,8 +46,12 @@ STOCK_LIST = {
     "6452": "康普",         "3045": "台灣大",
 }
 
-# ── 篩選用的股票池（可展開）────────────────────────────────
+# ── 篩選用的股票池（啟動時會被動態股票清單取代）──────────────
 SCREENER_LIST = {k: v for k, v in STOCK_LIST.items() if k not in ("0050", "0056")}
+
+# ── 動態股票宇宙（啟動後從 TWSE/TPEX 抓取）──────────────────
+# 初始為空，startup 後填入；搜尋 / 選股皆優先使用此表
+STOCK_UNIVERSE: dict[str, str] = {}
 
 # ── 掃描快取 ─────────────────────────────────────────────
 scan_cache = {
@@ -519,9 +523,12 @@ def _fetch_df(code: str) -> pd.DataFrame | None:
 
 async def run_scan():
     global scan_cache
-    codes = list(SCREENER_LIST.keys())
+    # 使用動態股票宇宙（啟動後已更新），若未更新則用內建清單
+    pool  = SCREENER_LIST if SCREENER_LIST else {k: v for k, v in STOCK_LIST.items() if k not in ("0050","0056")}
+    codes = list(pool.keys())
     scan_cache.update({"status": "running", "results": [], "progress": 0,
-                       "total": len(codes), "error": None})
+                       "total": len(codes), "error": None,
+                       "pool_source": "TWSE+TPEX" if len(codes) > 100 else "built-in"})
 
     loop = asyncio.get_event_loop()
     raw_results = []
@@ -534,7 +541,7 @@ async def run_scan():
             df = await loop.run_in_executor(executor, _fetch_df, code)
             if df is None:
                 return None
-            return check_trend_template(df, code, SCREENER_LIST[code])
+            return check_trend_template(df, code, pool[code])
 
     tasks = [process(c) for c in codes]
     for i, coro in enumerate(asyncio.as_completed(tasks)):
@@ -685,22 +692,100 @@ def to_yf(symbol: str) -> str:
     return f"{symbol}.TW"
 
 
+async def _fetch_tw_stock_universe() -> dict[str, str]:
+    """
+    從 TWSE（上市）+ TPEX（上櫃）公開 API 取得全台股清單。
+    只保留 4 位數字代碼的普通股，ETF / 特別股 / 認購權證排除。
+    回傳 {代碼: 名稱}，失敗時回傳空 dict（呼叫端使用 fallback）。
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+    }
+    result: dict[str, str] = {}
+
+    # ── 上市（TWSE）──────────────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+            r = await client.get(
+                "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_d"
+            )
+            if r.status_code == 200:
+                for item in r.json():
+                    code = str(item.get("Code", "")).strip()
+                    name = str(item.get("Name", "")).strip()
+                    # 只要 4 碼純數字（普通股），跳過 ETF(0開頭4碼)
+                    if len(code) == 4 and code.isdigit() and code[0] != "0" and name:
+                        result[code] = name
+    except Exception as e:
+        print(f"[universe] TWSE fetch failed: {e}")
+
+    # ── 上櫃（TPEX）──────────────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
+            r = await client.get(
+                "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis"
+            )
+            if r.status_code == 200:
+                for item in r.json():
+                    code = str(item.get("SecuritiesCompanyCode", "")).strip()
+                    name = str(item.get("CompanyName", "")).strip()
+                    if len(code) == 4 and code.isdigit() and code[0] != "0" and name:
+                        result[code] = name
+    except Exception as e:
+        print(f"[universe] TPEX fetch failed: {e}")
+
+    print(f"[universe] loaded {len(result)} stocks (TWSE+TPEX)")
+    return result
+
+
+@app.on_event("startup")
+async def startup_event():
+    """啟動時非同步抓取全台股清單，失敗不影響服務啟動"""
+    global STOCK_UNIVERSE, SCREENER_LIST
+    universe = await _fetch_tw_stock_universe()
+    if len(universe) >= 100:          # 確保資料有效才切換
+        STOCK_UNIVERSE = universe
+        # 選股池 = 全市場（排除 ETF 0 開頭的已在上面過濾）
+        SCREENER_LIST  = dict(universe)
+    else:
+        # 抓取失敗，沿用內建清單
+        STOCK_UNIVERSE = dict(STOCK_LIST)
+        print("[universe] using built-in fallback list")
+
+
 @app.get("/")
 async def root():
-    return {"message": "台股分析平台 API v2.0"}
+    return {
+        "message":      "台股分析平台 API v2.0",
+        "universe_size": len(STOCK_UNIVERSE),
+    }
 
 
 @app.get("/api/stocks/search")
 async def search_stocks(q: str = ""):
-    q = q.strip()
+    # 優先用動態完整清單，否則用內建清單
+    pool = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+    q    = q.strip()
     if not q:
-        return [{"symbol": k, "name": v} for k, v in list(STOCK_LIST.items())[:20]]
+        return [{"symbol": k, "name": v} for k, v in list(pool.items())[:20]]
     q_lower = q.lower()
     return [
         {"symbol": code, "name": name}
-        for code, name in STOCK_LIST.items()
+        for code, name in pool.items()
         if q_lower in code or q_lower in name
     ][:20]
+
+
+@app.get("/api/screener/universe")
+async def screener_universe():
+    """回傳目前選股池的股票數與清單（前端顯示用）"""
+    pool = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+    return {
+        "count":  len(SCREENER_LIST),
+        "source": "TWSE+TPEX" if len(STOCK_UNIVERSE) >= 100 else "built-in",
+        "sample": list(SCREENER_LIST.items())[:5],
+    }
 
 
 @app.get("/api/stocks/{symbol}/candles")
