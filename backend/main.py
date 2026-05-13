@@ -7,29 +7,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import pytz
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from datetime import datetime, timedelta
-
-def _make_yf_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-    })
-    retry = Retry(total=3, backoff_factor=1,
-                  status_forcelist=[429, 500, 502, 503, 504])
-    session.mount("https://", HTTPAdapter(max_retries=retry))
-    return session
-
-
-YF_SESSION = _make_yf_session()
 _candle_cache: dict[str, tuple[datetime, list]] = {}
 CACHE_TTL = timedelta(minutes=5)
 
@@ -659,7 +637,7 @@ def detect_pocket_pivot(df: pd.DataFrame) -> bool:
 
 def _fetch_df(code: str) -> pd.DataFrame | None:
     try:
-        df = yf.Ticker(f"{code}.TW", session=YF_SESSION).history(
+        df = yf.Ticker(f"{code}.TW").history(
             period="1y", interval="1d", auto_adjust=True
         )
         return df if not df.empty else None
@@ -816,7 +794,7 @@ def _detect_ftd(df: pd.DataFrame) -> dict:
 async def _get_index_status_async():
     loop = asyncio.get_event_loop()
     def _fetch():
-        df = yf.Ticker("^TWII", session=YF_SESSION).history(
+        df = yf.Ticker("^TWII").history(
             period="1y", interval="1d", auto_adjust=True
         )
         return df
@@ -989,7 +967,7 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         loop = asyncio.get_event_loop()
         df = await loop.run_in_executor(
             executor,
-            lambda: yf.Ticker(to_yf(symbol), session=YF_SESSION).history(
+            lambda: yf.Ticker(to_yf(symbol)).history(
                 period=period, interval=interval, auto_adjust=True
             )
         )
