@@ -217,6 +217,27 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     if max_depth > 35:
         vcp_seq = []; num_cont = 0; depths = []; max_depth = 0.0; last_depth = 100.0
 
+    # ── 過時 VCP 偵測：若收盤已超過最後樞紐 ×1.10，代表舊 VCP 早已突破 ─
+    # 此時縮小搜尋窗口到近 60 個交易日，尋找最新的整理型態
+    if vcp_seq and cur_close > vcp_seq[-1]["peak"] * 1.10:
+        # peak_idx 的範圍是 [0, _VCP_LOOKBACK-1]；
+        # 「近 60 日」= lookback 視窗最後 60 根 → peak_idx >= (lookback-60)
+        cutoff = max(0, 100 - 60)   # = 40，即只保留最近 60 根裡的高點
+        recent_pbs = [pb for pb in all_pbs if pb["peak_idx"] >= cutoff]
+        if recent_pbs:
+            new_seq = _best_contraction_sequence(recent_pbs)
+            # 新序列仍未被突破才採用
+            if new_seq and cur_close <= new_seq[-1]["peak"] * 1.10:
+                vcp_seq = new_seq
+            else:
+                vcp_seq = []
+        else:
+            vcp_seq = []
+        num_cont   = len(vcp_seq)
+        depths     = [pb["depth_pct"] for pb in vcp_seq]
+        max_depth  = max(depths) if depths else 0.0
+        last_depth = depths[-1]  if depths else 100.0
+
     # ── Base 長度 ──────────────────────────────────────────────
     base_days = 0
     if vcp_seq:
@@ -310,9 +331,14 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     vol_contracting = vol_second_half_lt_first
 
     # ══ 輔助：peak_idx → df 日期字串 ══════════════════════════
+    # peak_idx 是 _find_pullback_sequence 裡 h_arr[-lookback:] 的索引
+    # 必須用相同的 lookback（預設 100）來反推 df 的實際列號
+    _VCP_LOOKBACK = 100   # 與 _find_pullback_sequence 的 lookback 參數一致
     def _peak_date(pb_entry):
-        lb  = min(252, len(df))
+        lb  = min(_VCP_LOOKBACK, len(df))          # ← 修正：從 252 改為 100
         row = len(df) - lb + pb_entry["peak_idx"]
+        if row < 0 or row >= len(df):
+            return ""
         try:
             idx = df.index
             if hasattr(idx, 'tz') or hasattr(idx, 'freq'):
@@ -321,9 +347,10 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
                 return str(df["Date"].iloc[row])[:10]
             elif "Datetime" in df.columns:
                 return str(df["Datetime"].iloc[row])[:10]
+            else:
+                return str(idx[row])[:10]
         except Exception:
             return ""
-        return ""
 
     # ══ 兩個關鍵價位分開計算 ════════════════════════════════════
     #
