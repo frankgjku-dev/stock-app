@@ -935,6 +935,28 @@ body {
 .pc-lk { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .4px; }
 .pc-lv { font-size: 14px; font-weight: 700; }
 
+/* VCP 核心數據列 */
+.pc-vcp-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 6px 0;
+}
+.pc-vcp-chip {
+  display: flex; flex-direction: column; gap: 1px;
+  border: 1px solid var(--border-md); border-radius: 6px;
+  padding: 4px 8px; background: var(--surface-2);
+  color: var(--text-2);
+}
+.pc-vcp-k { font-size: 9px; color: var(--text-3); letter-spacing: .4px; }
+.pc-vcp-v { font-size: 12px; font-weight: 700; }
+.pc-vcp-flags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pc-flag {
+  font-size: 10px; font-weight: 600; padding: 2px 7px;
+  border-radius: 10px; white-space: nowrap;
+}
+.pc-flag-green  { background: var(--down-dim);   color: var(--down); }
+.pc-flag-blue   { background: rgba(42,140,180,.12); color: #3a8aaa; }
+.pc-flag-orange { background: var(--accent-dim); color: var(--accent); }
+
 .pc-reason {
   font-size: 11px; color: var(--text-2); line-height: 1.6;
   border-top: 1px solid rgba(120,90,60,0.12); padding-top: 8px;

@@ -299,13 +299,28 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
             <div className="priority-cards">
               {highPriority.map(r => {
                 const rec = r.recommendation
+                const vcp = r.vcp ?? {}
                 const sty = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.low
+
+                // 買點狀態顏色
+                const buyColor = {
+                  '放量突破':  '#3a8a5a',
+                  '突破(量不足)': '#a09020',
+                  '等待突破':  '#b87030',
+                  '整理中':    '#7a6050',
+                }[vcp.buy_status] || '#9a8060'
+
+                // VCP score100 顏色
+                const s100 = vcp.score100 ?? 0
+                const scoreColor = s100 >= 80 ? '#3a8a5a' : s100 >= 65 ? '#a09020' : '#b87030'
+
                 return (
                   <div
                     key={r.symbol}
                     className="priority-card"
                     style={{ borderColor: sty.border, background: sty.bg }}
                   >
+                    {/* ── 標題列 ── */}
                     <div className="pc-header">
                       <div>
                         <span className="pc-sym" onClick={() => onSelectStock(r.symbol)}>{r.symbol}</span>
@@ -314,6 +329,59 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                       <span className="pc-action" style={{ color: sty.text }}>{rec?.action_label}</span>
                     </div>
 
+                    {/* ── VCP 核心數據列 ── */}
+                    <div className="pc-vcp-row">
+                      {/* VCP 總分 */}
+                      <div className="pc-vcp-chip" style={{ color: scoreColor, borderColor: scoreColor + '55' }}>
+                        <span className="pc-vcp-k">VCP分</span>
+                        <span className="pc-vcp-v">{s100}</span>
+                      </div>
+
+                      {/* 買點狀態 */}
+                      {vcp.buy_status && vcp.buy_status !== '—' && (
+                        <div className="pc-vcp-chip" style={{ color: buyColor, borderColor: buyColor + '55' }}>
+                          <span className="pc-vcp-k">狀態</span>
+                          <span className="pc-vcp-v">{vcp.buy_status}</span>
+                        </div>
+                      )}
+
+                      {/* 收縮次數 + 深度 */}
+                      {vcp.contractions >= 2 && (
+                        <div className="pc-vcp-chip">
+                          <span className="pc-vcp-k">收縮</span>
+                          <span className="pc-vcp-v">
+                            {vcp.contractions}次
+                            {vcp.contraction_depths?.length
+                              ? ` (${vcp.contraction_depths.map(d => d + '%').join('→')})`
+                              : ''}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 基準點 + 距離 */}
+                      {vcp.pivot > 0 && (
+                        <div className="pc-vcp-chip">
+                          <span className="pc-vcp-k">基準點</span>
+                          <span className="pc-vcp-v">
+                            {vcp.pivot}
+                            {vcp.dist_pivot != null && (
+                              <span style={{ fontSize: 10, marginLeft: 3, opacity: 0.8 }}>
+                                {vcp.dist_pivot <= 0 ? '▲已突破' : `距${vcp.dist_pivot}%`}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 低點墊高 / 量縮 */}
+                      <div className="pc-vcp-flags">
+                        {vcp.higher_lows    && <span className="pc-flag pc-flag-green">↑低點墊高</span>}
+                        {vcp.vol_contracting && <span className="pc-flag pc-flag-blue">📉量縮</span>}
+                        {r.pocket_pivot     && <span className="pc-flag pc-flag-orange">🚀 PP</span>}
+                      </div>
+                    </div>
+
+                    {/* ── 進場參考 ── */}
                     {rec?.entry && (
                       <div className="pc-levels">
                         <div className="pc-level">
@@ -323,14 +391,17 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                       </div>
                     )}
 
+                    {/* ── 原因說明 ── */}
                     <div className="pc-reason">{rec?.reason}</div>
 
+                    {/* ── 底部 meta ── */}
                     <div className="pc-footer">
-                      <span className="pc-meta">RS {r.rs_rating} · {r.passed}/8 · {rec?.setup_type}</span>
-                      <div style={{ display:'flex', gap:6 }}>
-                        {r.pocket_pivot && <span className="pp-badge">🚀 PP</span>}
-                        <button className="chart-link-btn" onClick={() => onSelectStock(r.symbol)}>看圖 →</button>
-                      </div>
+                      <span className="pc-meta">
+                        RS <strong style={{ color: rsColor(r.rs_rating) }}>{r.rs_rating}</strong>
+                        　條件 {r.passed}/8
+                        　{rec?.setup_type}
+                      </span>
+                      <button className="chart-link-btn" onClick={() => onSelectStock(r.symbol)}>看圖 →</button>
                     </div>
                   </div>
                 )
