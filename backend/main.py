@@ -165,11 +165,14 @@ def _best_contraction_sequence(pullbacks):
     """
     從回檔清單中找「深度遞減 + 低點墊高」的最長子序列。
 
-    Minervini 兩大硬條件：
-    1. 深度遞減：後一次深度 ≤ 前一次 × 0.90（大約減半方向正確）
+    Minervini VCP 兩大硬條件：
+    1. 深度遞減：後一次深度 ≤ 前一次 × 0.80
+       （即每次回檔至少縮小 20%，例如 25% → 20% → 16%）
+       理想情況是接近減半（25% → 12% → 6%），由評分系統另行獎勵。
     2. 低點墊高：後一次低點（trough）必須 >= 前一次低點 × 0.98（允許 2% 容差）
+       代表「高低點皆墊高」的多頭格局。
 
-    兩個條件同時滿足才納入序列。
+    兩個條件同時滿足才納入序列；最多取最近 8 次回檔中的最長合格子序列。
     """
     if not pullbacks:
         return []
@@ -180,7 +183,7 @@ def _best_contraction_sequence(pullbacks):
         for j in range(start + 1, len(recent)):
             prev = seq[-1]
             cur  = recent[j]
-            depth_ok  = cur["depth_pct"] <= prev["depth_pct"] * 0.90   # 深度縮小
+            depth_ok  = cur["depth_pct"] <= prev["depth_pct"] * 0.80   # 深度縮小 ≥20%
             trough_ok = cur["trough"]    >= prev["trough"]    * 0.98   # 低點不得更低
             if depth_ok and trough_ok:
                 seq.append(cur)
