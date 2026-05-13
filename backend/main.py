@@ -665,13 +665,12 @@ async def run_scan():
     loop = asyncio.get_event_loop()
     raw_results = []
 
-    # fetch & analyse：限制並發為 3，每批次間隔 0.3 秒，避免 Yahoo Finance 限流
-    sem = asyncio.Semaphore(3)
+    # fetch & analyse：限制並發為 5，_fetch_df 內部遇限流會自動重試
+    sem = asyncio.Semaphore(5)
 
     async def process(code):
         async with sem:
             df = await loop.run_in_executor(executor, _fetch_df, code)
-            await asyncio.sleep(0.3)          # 每次請求後稍作等待
             if df is None:
                 return None
             return check_trend_template(df, code, pool[code])
@@ -944,6 +943,13 @@ async def search_stocks(q: str = ""):
         for code, name in pool.items()
         if q_lower in code or q_lower in name
     ][:20]
+
+
+@app.get("/api/stocks/list")
+async def stock_list_all():
+    """回傳完整股票清單（前端本地搜尋用，只需呼叫一次）"""
+    pool = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+    return [{"symbol": k, "name": v} for k, v in pool.items()]
 
 
 @app.get("/api/screener/universe")

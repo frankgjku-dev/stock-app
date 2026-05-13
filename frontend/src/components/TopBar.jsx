@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { API_BASE } from '../config'
 
 const INTERVALS = [
@@ -16,25 +16,36 @@ export default function TopBar({
   onSymbolChange, onIntervalChange,
   watchlist, onToggleInGroup, onAddGroup,
 }) {
-  const [query,    setQuery]    = useState('')
-  const [results,  setResults]  = useState([])
-  const [open,     setOpen]     = useState(false)
-  const [favOpen,  setFavOpen]  = useState(false)
-  const [newGroup, setNewGroup] = useState('')
-  const [adding,   setAdding]   = useState(false)
+  const [query,      setQuery]      = useState('')
+  const [results,    setResults]    = useState([])
+  const [open,       setOpen]       = useState(false)
+  const [favOpen,    setFavOpen]    = useState(false)
+  const [newGroup,   setNewGroup]   = useState('')
+  const [adding,     setAdding]     = useState(false)
+  const [stockPool,  setStockPool]  = useState([])   // 本地股票清單
   const timerRef = useRef(null)
 
-  const search = useCallback(async (q) => {
-    if (!q.trim()) { setResults([]); setOpen(false); return }
-    const r = await fetch(`${API_BASE}/api/stocks/search?q=${encodeURIComponent(q)}`)
-    const data = await r.json()
-    setResults(data); setOpen(data.length > 0)
+  // 只在初次掛載時拉一次完整清單，之後搜尋全在前端完成
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stocks/list`)
+      .then(r => r.json())
+      .then(data => setStockPool(data))
+      .catch(() => {})
   }, [])
 
   function handleChange(e) {
-    const q = e.target.value; setQuery(q)
+    const q = e.target.value
+    setQuery(q)
     clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => search(q), 200)
+    timerRef.current = setTimeout(() => {
+      const trimmed = q.trim().toLowerCase()
+      if (!trimmed) { setResults([]); setOpen(false); return }
+      const hits = stockPool.filter(
+        s => s.symbol.includes(trimmed) || s.name.toLowerCase().includes(trimmed)
+      ).slice(0, 20)
+      setResults(hits)
+      setOpen(hits.length > 0)
+    }, 80)   // 80ms 足夠防抖，本地過濾不需要 200ms
   }
 
   function pick(s) { onSymbolChange(s.symbol); setQuery(''); setOpen(false) }
