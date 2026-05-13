@@ -637,20 +637,55 @@ def detect_pocket_pivot(df: pd.DataFrame) -> bool:
 
 
 def _fetch_df(code: str) -> pd.DataFrame | None:
+    """單支股票 K 線（K線圖端點使用）"""
+    try:
+        df = yf.Ticker(f"{code}.TW").history(
+            period="1y", interval="1d", auto_adjust=True
+        )
+        return df if not df.empty else None
+    except Exception:
+        return None
+
+
+def _fetch_batch(codes: list) -> dict:
+    """
+    批量下載一組股票的一年日K（選股掃描使用）。
+    yf.download() 一次請求取得多支，大幅減少 API 呼叫次數。
+    回傳 {code: DataFrame}
+    """
     import time, random
+    if not codes:
+        return {}
+    tickers = [f"{c}.TW" for c in codes]
     for attempt in range(3):
         try:
-            df = yf.Ticker(f"{code}.TW").history(
-                period="1y", interval="1d", auto_adjust=True
+            raw = yf.download(
+                tickers=tickers,
+                period="1y",
+                interval="1d",
+                auto_adjust=True,
+                group_by="ticker",
+                threads=True,
+                progress=False,
             )
-            if not df.empty:
-                return df
-            return None
-        except Exception as e:
-            if attempt < 2:
-                time.sleep(2 + random.uniform(0, 1))   # 被限流時等 2-3 秒再重試
+            result = {}
+            if len(codes) == 1:
+                # 單支時 yf.download 回傳扁平欄位
+                if not raw.empty:
+                    result[codes[0]] = raw
             else:
-                return None
+                for code, ticker in zip(codes, tickers):
+                    try:
+                        df = raw[ticker].dropna(how="all")
+                        if not df.empty:
+                            result[code] = df
+                    except (KeyError, TypeError):
+                        pass
+            return result
+        except Exception:
+            if attempt < 2:
+                time.sleep(3 + random.uniform(0, 2))
+    return {}
 
 
 async def run_scan():
@@ -665,23 +700,22 @@ async def run_scan():
     loop = asyncio.get_event_loop()
     raw_results = []
 
-    # fetch & analyse：限制並發為 5，_fetch_df 內部遇限流會自動重試
-    sem = asyncio.Semaphore(5)
+    # ── 批量下載：50 支一批，一次 API → 約 38 次請求取代 1900 次 ──
+    BATCH_SIZE = 50
+    batches = [codes[i:i + BATCH_SIZE] for i in range(0, len(codes), BATCH_SIZE)]
 
-    async def process(code):
-        async with sem:
-            df = await loop.run_in_executor(executor, _fetch_df, code)
-            if df is None:
-                return None
-            return check_trend_template(df, code, pool[code])
-
-    tasks = [process(c) for c in codes]
-    for i, coro in enumerate(asyncio.as_completed(tasks)):
-        result = await coro
-        if result:
-            raw_results.append(result)
-        scan_cache["progress"] = i + 1
-        await asyncio.sleep(0)   # yield to event loop
+    for batch_idx, batch in enumerate(batches):
+        # 在 executor 中批量下載（blocking IO 不阻塞 event loop）
+        batch_data = await loop.run_in_executor(executor, _fetch_batch, batch)
+        # 分析每支股票（CPU bound，但量少可直接跑）
+        for code in batch:
+            df = batch_data.get(code)
+            if df is not None and not df.empty:
+                r = check_trend_template(df, code, pool[code])
+                if r:
+                    raw_results.append(r)
+        scan_cache["progress"] = min((batch_idx + 1) * BATCH_SIZE, len(codes))
+        await asyncio.sleep(0.5)   # 批次間短暫讓出（不是每支都等）
 
     # RS Rating: percentile rank across all results
     if raw_results:
