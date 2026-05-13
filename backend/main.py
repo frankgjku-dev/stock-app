@@ -189,7 +189,9 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     """
     empty = {
         "score": 0, "score100": 0, "label": "",
-        "pivot": 0.0, "pivot_date": "", "dist_pivot": 0.0,
+        "pivot": 0.0, "pivot_date": "",
+        "base_high": 0.0, "base_high_date": "",
+        "dist_pivot": 0.0,
         "atr_ratio": None, "days_below_pivot": 0, "details": [],
         "contractions": 0, "contraction_depths": [], "vol_contracting": False,
         "last_depth_pct": 0.0, "stop_loss": 0.0,
@@ -307,40 +309,59 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
 
     vol_contracting = vol_second_half_lt_first
 
-    # ══ Pivot Point = 整個整理區的最高點 ════════════════════════
-    # Minervini 定義：整理區所有局部高點中的最高值即為「基準點」
-    # 只有收盤突破此基準點 +5%（或放量）才算真正突破
-    pivot_date = ""
-    if vcp_seq:
-        pivot_pb   = max(vcp_seq, key=lambda pb: pb["peak"])
-        pivot      = round(pivot_pb["peak"], 2)
-        # ── 計算 pivot 日期 ────────────────────────────────────
-        # peak_idx 是 _find_pullback_sequence 裡的索引，相對於 h[-lookback:]
-        # 還原成 df 的絕對行號
-        lb = min(252, len(df))
-        actual_row = len(df) - lb + pivot_pb["peak_idx"]
+    # ══ 輔助：peak_idx → df 日期字串 ══════════════════════════
+    def _peak_date(pb_entry):
+        lb  = min(252, len(df))
+        row = len(df) - lb + pb_entry["peak_idx"]
         try:
             idx = df.index
-            if hasattr(idx, 'tz') or hasattr(idx, 'freq'):      # DatetimeIndex
-                pivot_date = str(idx[actual_row])[:10]
+            if hasattr(idx, 'tz') or hasattr(idx, 'freq'):
+                return str(idx[row])[:10]
             elif "Date" in df.columns:
-                pivot_date = str(df["Date"].iloc[actual_row])[:10]
+                return str(df["Date"].iloc[row])[:10]
             elif "Datetime" in df.columns:
-                pivot_date = str(df["Datetime"].iloc[actual_row])[:10]
+                return str(df["Datetime"].iloc[row])[:10]
         except Exception:
-            pivot_date = ""
+            return ""
+        return ""
+
+    # ══ 兩個關鍵價位分開計算 ════════════════════════════════════
+    #
+    # 基準點（Base High）= VCP 整理區起始高點
+    #   → vcp_seq 中峰值最高的那一個（整理開始前的波段高點）
+    #   → 只要股價未突破此點，皆屬同一段 VCP
+    #
+    # 樞紐點（Pivot）= 買入觸發點
+    #   → 最後一次收縮的高點（最緊縮區的高點）
+    #   → 收盤突破此點 + 放量 = 有效買入訊號
+    #
+    base_high = 0.0;  base_high_date = ""
+    pivot     = 0.0;  pivot_date     = ""
+
+    if vcp_seq:
+        # 基準點：整個序列的最高峰
+        base_pb        = max(vcp_seq, key=lambda pb: pb["peak"])
+        base_high      = round(base_pb["peak"], 2)
+        base_high_date = _peak_date(base_pb)
+
+        # 樞紐點：最後一次收縮的峰值
+        last_pb    = vcp_seq[-1]
+        pivot      = round(last_pb["peak"], 2)
+        pivot_date = _peak_date(last_pb)
     else:
-        ph_start = max(len(h) - 45, 0)
-        ph_end   = max(len(h) - 5,  1)
-        pivot_h  = h[ph_start:ph_end]
-        pivot    = round(float(max(pivot_h)) if len(pivot_h) > 0 else cur_close, 2)
+        # 無 VCP 序列時，以近期45日高點估算
+        ph_start   = max(len(h) - 45, 0)
+        ph_end     = max(len(h) - 5,  1)
+        pivot_h    = h[ph_start:ph_end]
+        pivot      = round(float(max(pivot_h)) if len(pivot_h) > 0 else cur_close, 2)
+        base_high  = pivot
 
     dist_piv = round((pivot - cur_close) / pivot * 100, 1) if pivot > 0 else 0.0
 
-    # ── 突破準備（10 分）──────────────────────────────────────
+    # ── 突破準備評分（10 分）──────────────────────────────────
     break_s = 0
     if 0 <= dist_piv <= 3:
-        break_s += 5; details.append(f"距基準點 {dist_piv}%")
+        break_s += 5; details.append(f"距樞紐點 {dist_piv}%")
     elif 0 <= dist_piv <= 5:
         break_s += 3
     if atr_ratio < 0.70:
@@ -349,26 +370,24 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         break_s += 3; details.append(f"ATR收縮({atr_ratio})")
     s100 += min(break_s, 10)
 
-    stop_loss = 0.0  # 已移除停損計算
+    stop_loss = 0.0
 
     # ══ days_below_pivot ═══════════════════════════════════════
     recent_c         = c_arr[-20:] if len(c_arr) >= 20 else c_arr
     days_below_pivot = int(sum(1 for x in recent_c if float(x) < pivot))
 
-    # ══ 買點狀態 ═══════════════════════════════════════════════
+    # ══ 買點狀態（以樞紐點為基準）════════════════════════════════
     today_close = float(c_arr[-1])
     vol_today   = float(v[-1])
 
-    # 突破條件：收盤超過基準點 +5%（或放量突破基準點）才算真正突破
-    # 在 0~+5% 區間內屬於「買入窗口」，超過 +5% 不追
     if today_close > pivot * 1.05:
-        buy_status = "過度延伸"                          # 超過基準點 5%，不追
+        buy_status = "過度延伸"         # 突破樞紐點超過 5%，不追
     elif today_close >= pivot and vol50 > 0 and vol_today >= vol50 * 1.5:
-        buy_status = "放量突破"                          # 收盤≥基準點 + 量≥50日均量×1.5
+        buy_status = "放量突破"         # 收盤≥樞紐點 + 量≥50日均×1.5
     elif today_close >= pivot:
-        buy_status = "突破(量不足)"                      # 收盤≥基準點但量能不夠
+        buy_status = "突破(量不足)"     # 收盤≥樞紐點但量不足
     elif 0 <= dist_piv <= 5 and num_cont >= 2:
-        buy_status = "等待突破"                          # 距基準點 0~5%，進場準備區
+        buy_status = "等待突破"         # 距樞紐點 0~5%
     elif num_cont >= 2:
         buy_status = "整理中"
     else:
@@ -395,9 +414,11 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         "score":              score5,
         "score100":           s100,
         "label":              label,
-        "pivot":              pivot,
-        "pivot_date":         pivot_date,     # 基準點形成日期 YYYY-MM-DD
-        "dist_pivot":         dist_piv,
+        "pivot":              pivot,          # 樞紐點：最後收縮高點（買入觸發）
+        "pivot_date":         pivot_date,     # 樞紐點日期
+        "base_high":          base_high,      # 基準點：VCP 整理起始高點
+        "base_high_date":     base_high_date, # 基準點日期
+        "dist_pivot":         dist_piv,       # 距樞紐點 %
         "atr_ratio":          atr_ratio,
         "days_below_pivot":   days_below_pivot,
         "details":            details,
