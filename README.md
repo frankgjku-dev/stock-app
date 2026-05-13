@@ -1,3 +1,12 @@
+---
+title: Twstock Api
+emoji: 📈
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # 台股分析平台
 
 TradingView 風格的台股 K 線分析工具。
