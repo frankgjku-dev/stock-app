@@ -189,7 +189,7 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     """
     empty = {
         "score": 0, "score100": 0, "label": "",
-        "pivot": 0.0, "dist_pivot": 0.0,
+        "pivot": 0.0, "pivot_date": "", "dist_pivot": 0.0,
         "atr_ratio": None, "days_below_pivot": 0, "details": [],
         "contractions": 0, "contraction_depths": [], "vol_contracting": False,
         "last_depth_pct": 0.0, "stop_loss": 0.0,
@@ -310,8 +310,25 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     # ══ Pivot Point = 整個整理區的最高點 ════════════════════════
     # Minervini 定義：整理區所有局部高點中的最高值即為「基準點」
     # 只有收盤突破此基準點 +5%（或放量）才算真正突破
+    pivot_date = ""
     if vcp_seq:
-        pivot = round(max(pb["peak"] for pb in vcp_seq), 2)
+        pivot_pb   = max(vcp_seq, key=lambda pb: pb["peak"])
+        pivot      = round(pivot_pb["peak"], 2)
+        # ── 計算 pivot 日期 ────────────────────────────────────
+        # peak_idx 是 _find_pullback_sequence 裡的索引，相對於 h[-lookback:]
+        # 還原成 df 的絕對行號
+        lb = min(252, len(df))
+        actual_row = len(df) - lb + pivot_pb["peak_idx"]
+        try:
+            idx = df.index
+            if hasattr(idx, 'tz') or hasattr(idx, 'freq'):      # DatetimeIndex
+                pivot_date = str(idx[actual_row])[:10]
+            elif "Date" in df.columns:
+                pivot_date = str(df["Date"].iloc[actual_row])[:10]
+            elif "Datetime" in df.columns:
+                pivot_date = str(df["Datetime"].iloc[actual_row])[:10]
+        except Exception:
+            pivot_date = ""
     else:
         ph_start = max(len(h) - 45, 0)
         ph_end   = max(len(h) - 5,  1)
@@ -376,9 +393,10 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
 
     return {
         "score":              score5,
-        "score100":           s100,          # 部分分（max 60），外層追加後→100
+        "score100":           s100,
         "label":              label,
         "pivot":              pivot,
+        "pivot_date":         pivot_date,     # 基準點形成日期 YYYY-MM-DD
         "dist_pivot":         dist_piv,
         "atr_ratio":          atr_ratio,
         "days_below_pivot":   days_below_pivot,

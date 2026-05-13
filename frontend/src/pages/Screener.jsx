@@ -358,7 +358,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         </div>
                       )}
 
-                      {/* 基準點 + 距離 */}
+                      {/* 基準點 + 距離 + 日期 */}
                       {vcp.pivot > 0 && (
                         <div className="pc-vcp-chip">
                           <span className="pc-vcp-k">基準點</span>
@@ -370,6 +370,11 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                               </span>
                             )}
                           </span>
+                          {vcp.pivot_date && (
+                            <span style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>
+                              📅 {vcp.pivot_date}
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -484,11 +489,11 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                             </span>
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>
-                      {/* 樞紐點 + 買點狀態 */}
+                      {/* 樞紐點 + 日期 + 買點狀態 */}
                       <td style={{ fontSize:12 }}>
                         {vcp.pivot
                           ? <div>
-                              <span>{vcp.pivot}</span>
+                              <span style={{ fontWeight:600 }}>{vcp.pivot}</span>
                               <span style={{
                                 marginLeft:4,
                                 color: vcp.dist_pivot <= 0 ? 'var(--down)' :
@@ -497,13 +502,19 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                               }}>
                                 {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
                               </span>
+                              {/* 基準點形成日期 */}
+                              {vcp.pivot_date && (
+                                <div style={{ fontSize:10, color:'var(--text-3)', marginTop:1 }}>
+                                  📅 {vcp.pivot_date}
+                                </div>
+                              )}
                               {vcp.buy_status && vcp.buy_status !== '—'
                                 ? <div style={{
                                     fontSize:10, marginTop:2,
-                                    color: vcp.buy_status === '正式突破' ? 'var(--down)' :
-                                           vcp.buy_status === '等待'     ? '#ffd700' :
-                                           vcp.buy_status === '偷跑'     ? '#26c6da' :
-                                           vcp.buy_status === '過度延伸' ? 'var(--text-3)' : 'var(--text-2)',
+                                    color: vcp.buy_status === '放量突破'   ? 'var(--down)' :
+                                           vcp.buy_status === '等待突破'   ? '#ffd700' :
+                                           vcp.buy_status === '突破(量不足)' ? '#26c6da' :
+                                           vcp.buy_status === '過度延伸'   ? 'var(--text-3)' : 'var(--text-2)',
                                   }}>{vcp.buy_status}</div>
                                 : null}
                             </div>
