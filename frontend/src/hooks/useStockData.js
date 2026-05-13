@@ -37,7 +37,7 @@ export default function useStockData(symbol, interval, period) {
     }
 
     fetchQuote()
-    pollRef.current = setInterval(fetchQuote, 5000)
+    pollRef.current = setInterval(fetchQuote, 30000)  // 30秒輪詢，避免打爆 API
     return () => clearInterval(pollRef.current)
   }, [symbol])
 

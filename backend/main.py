@@ -9,7 +9,8 @@ import numpy as np
 import pytz
 from datetime import datetime, timedelta
 _candle_cache: dict[str, tuple[datetime, list]] = {}
-CACHE_TTL = timedelta(minutes=5)
+CACHE_TTL_INTRADAY = timedelta(minutes=5)    # 分鐘線：5 分鐘快取
+CACHE_TTL_DAILY    = timedelta(hours=2)      # 日線/週線/月線：2 小時快取
 
 app = FastAPI(title="台股分析平台")
 app.add_middleware(
@@ -636,13 +637,20 @@ def detect_pocket_pivot(df: pd.DataFrame) -> bool:
 
 
 def _fetch_df(code: str) -> pd.DataFrame | None:
-    try:
-        df = yf.Ticker(f"{code}.TW").history(
-            period="1y", interval="1d", auto_adjust=True
-        )
-        return df if not df.empty else None
-    except Exception:
-        return None
+    import time, random
+    for attempt in range(3):
+        try:
+            df = yf.Ticker(f"{code}.TW").history(
+                period="1y", interval="1d", auto_adjust=True
+            )
+            if not df.empty:
+                return df
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2 + random.uniform(0, 1))   # 被限流時等 2-3 秒再重試
+            else:
+                return None
 
 
 async def run_scan():
@@ -657,12 +665,13 @@ async def run_scan():
     loop = asyncio.get_event_loop()
     raw_results = []
 
-    # fetch & analyse in groups of 6
-    sem = asyncio.Semaphore(6)
+    # fetch & analyse：限制並發為 3，每批次間隔 0.3 秒，避免 Yahoo Finance 限流
+    sem = asyncio.Semaphore(3)
 
     async def process(code):
         async with sem:
             df = await loop.run_in_executor(executor, _fetch_df, code)
+            await asyncio.sleep(0.3)          # 每次請求後稍作等待
             if df is None:
                 return None
             return check_trend_template(df, code, pool[code])
@@ -958,9 +967,11 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
 
         cache_key = f"{symbol}:{interval}:{period}"
         now = datetime.now()
+        is_intraday = interval not in ("1d", "1wk", "1mo")
+        ttl = CACHE_TTL_INTRADAY if is_intraday else CACHE_TTL_DAILY
         if cache_key in _candle_cache:
             cached_at, cached_candles = _candle_cache[cache_key]
-            if now - cached_at < CACHE_TTL and cached_candles:
+            if now - cached_at < ttl and cached_candles:
                 return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
                         "candles": cached_candles}
 
