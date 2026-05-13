@@ -1135,6 +1135,169 @@ async def ws_quote(ws: WebSocket, symbol: str):
         pass
 
 
+# ══════════════════════════════════════════════════════════
+#  回測 API
+# ══════════════════════════════════════════════════════════
+@app.get("/api/stocks/{symbol}/backtest")
+async def run_backtest(
+    symbol:     str,
+    stop_pct:   float = 8.0,
+    target_pct: float = 20.0,
+    hold_days:  int   = 60,
+    period:     str   = "3y",
+):
+    """
+    VCP 突破策略回測（逐日 walk-forward）
+      買入：偵測到放量突破基準點（收盤 >= pivot，量 >= 50日均 × 1.5，VCP ≥ 2次收縮）
+      停損：收盤跌破買入價 × (1 - stop_pct%)
+      停利：收盤超過買入價 × (1 + target_pct%)
+      時間：持有超過 hold_days 天，強制平倉
+    初始資金假設為 100（方便計算報酬率），不考慮手續費。
+    """
+    loop = asyncio.get_event_loop()
+    df_raw = await loop.run_in_executor(
+        executor,
+        lambda: yf.Ticker(to_yf(symbol)).history(period=period, interval="1d", auto_adjust=True)
+    )
+    if df_raw is None or df_raw.empty or len(df_raw) < 120:
+        return {"error": "歷史資料不足（至少需要 120 個交易日）"}
+
+    df_raw = df_raw.reset_index()
+    date_col = "Date" if "Date" in df_raw.columns else "Datetime"
+    dates  = [str(d)[:10] for d in df_raw[date_col]]
+    closes = df_raw["Close"].values.astype(float)
+    highs  = df_raw["High"].values.astype(float)
+    lows   = df_raw["Low"].values.astype(float)   # noqa: F841
+    vols   = df_raw["Volume"].values.astype(float)
+
+    LOOKBACK = min(252, len(df_raw) // 3)
+
+    # ── 在 executor 中跑逐日計算（blocking）──────────────────
+    trades_out   = []
+    equity_out   = []
+
+    def _worker():
+        equity      = 100.0
+        in_trade    = False
+        entry_price = 0.0
+        entry_date  = ""
+        entry_idx   = 0
+        entry_pivot = 0.0
+
+        for i in range(LOOKBACK, len(closes)):
+            cur_close = float(closes[i])
+            cur_vol   = float(vols[i])
+
+            if in_trade:
+                days_held    = i - entry_idx
+                stop_price   = entry_price * (1 - stop_pct   / 100)
+                target_price = entry_price * (1 + target_pct / 100)
+
+                exit_reason = None
+                exit_price  = cur_close
+                if cur_close <= stop_price:
+                    exit_reason = "停損"
+                    exit_price  = stop_price
+                elif cur_close >= target_price:
+                    exit_reason = "停利"
+                elif days_held >= hold_days:
+                    exit_reason = "時間停損"
+
+                if exit_reason:
+                    pnl = (exit_price - entry_price) / entry_price * 100
+                    equity *= (1 + pnl / 100)
+                    trades_out.append({
+                        "entry_date":  entry_date,
+                        "exit_date":   dates[i],
+                        "entry_price": round(entry_price, 2),
+                        "exit_price":  round(exit_price,  2),
+                        "pivot":       round(entry_pivot,  2),
+                        "pnl_pct":     round(pnl, 2),
+                        "exit_reason": exit_reason,
+                        "days_held":   days_held,
+                    })
+                    in_trade = False
+
+            else:
+                # 每 3 天偵測一次（降低運算量）
+                if i % 3 == 0:
+                    win_df = df_raw.iloc[max(0, i - LOOKBACK): i + 1]
+                    ma50   = float(np.mean(closes[max(0, i - 50): i])) if i >= 50 else float(np.mean(closes[:i + 1]))
+                    high52 = float(np.max(highs[max(0, i - 252): i + 1]))
+                    vcp    = detect_vcp(win_df, cur_close, ma50, high52)
+                    pivot  = vcp.get("pivot", 0)
+                    vol50  = float(np.mean(vols[max(0, i - 50): i])) if i >= 50 else float(np.mean(vols[:i + 1]))
+
+                    is_breakout = (
+                        pivot > 0
+                        and cur_close >= pivot
+                        and cur_close <= pivot * 1.05          # 不追超過 5%
+                        and cur_vol   >= vol50 * 1.5           # 放量
+                        and vcp.get("contractions", 0) >= 2    # VCP 至少 2 次收縮
+                    )
+                    if is_breakout:
+                        in_trade    = True
+                        entry_price = cur_close
+                        entry_date  = dates[i]
+                        entry_idx   = i
+                        entry_pivot = pivot
+
+            equity_out.append({"date": dates[i], "value": round(equity, 2)})
+
+        # 若回測結束時仍在倉，以最後收盤平倉
+        if in_trade:
+            last = float(closes[-1])
+            pnl  = (last - entry_price) / entry_price * 100
+            equity *= (1 + pnl / 100)
+            trades_out.append({
+                "entry_date":  entry_date,
+                "exit_date":   dates[-1],
+                "entry_price": round(entry_price, 2),
+                "exit_price":  round(last, 2),
+                "pivot":       round(entry_pivot, 2),
+                "pnl_pct":     round(pnl, 2),
+                "exit_reason": "持倉中",
+                "days_held":   len(closes) - 1 - entry_idx,
+            })
+        return equity
+
+    final_equity = await loop.run_in_executor(executor, _worker)
+
+    # ── 統計 ──────────────────────────────────────────────
+    total = len(trades_out)
+    if total > 0:
+        wins  = [t for t in trades_out if t["pnl_pct"] > 0]
+        loses = [t for t in trades_out if t["pnl_pct"] <= 0]
+        avg_win  = sum(t["pnl_pct"] for t in wins)  / max(len(wins),  1)
+        avg_loss = sum(t["pnl_pct"] for t in loses) / max(len(loses), 1)
+        gross_p  = sum(t["pnl_pct"] for t in wins)
+        gross_l  = abs(sum(t["pnl_pct"] for t in loses))
+        pf       = round(gross_p / gross_l, 2) if gross_l > 0 else 99.0
+        peak, max_dd = 100.0, 0.0
+        for pt in equity_out:
+            if pt["value"] > peak:
+                peak = pt["value"]
+            dd = (peak - pt["value"]) / peak * 100
+            if dd > max_dd:
+                max_dd = dd
+    else:
+        avg_win = avg_loss = pf = max_dd = 0.0
+
+    stats = {
+        "total_trades":  total,
+        "win_count":     len([t for t in trades_out if t["pnl_pct"] > 0]),
+        "loss_count":    len([t for t in trades_out if t["pnl_pct"] <= 0]),
+        "win_rate":      round(len([t for t in trades_out if t["pnl_pct"] > 0]) / total * 100, 1) if total else 0,
+        "avg_gain":      round(avg_win,  2),
+        "avg_loss":      round(avg_loss, 2),
+        "total_return":  round(final_equity - 100, 2),
+        "max_drawdown":  round(-max_dd, 2),
+        "profit_factor": pf,
+    }
+
+    return {"symbol": symbol, "trades": trades_out, "stats": stats, "equity_curve": equity_out}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

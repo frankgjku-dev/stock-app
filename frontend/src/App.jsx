@@ -7,11 +7,13 @@ import WatchlistSidebar from './components/WatchlistSidebar'
 import Screener        from './pages/Screener'
 import Calculator      from './pages/Calculator'
 import Journal         from './pages/Journal'
+import Backtest        from './pages/Backtest'
 import useStockData    from './hooks/useStockData'
 
 const TABS = [
   { id: 'chart',      label: 'K線分析' },
   { id: 'screener',   label: '選股 (Minervini)' },
+  { id: 'backtest',   label: '回測' },
   { id: 'calculator', label: '部位計算機' },
   { id: 'journal',    label: '交易日誌' },
 ]
@@ -155,6 +157,7 @@ export default function App() {
           onToggleInGroup={toggleInGroup}
         />
       )}
+      {tab === 'backtest'   && <Backtest symbol={symbol} />}
       {tab === 'calculator' && <Calculator />}
       {tab === 'journal'    && <Journal />}
     </div>
