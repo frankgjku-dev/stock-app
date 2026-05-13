@@ -40,7 +40,7 @@ export default function App() {
     localStorage.setItem('tw_watchlist', JSON.stringify(watchlist))
   }, [watchlist])
 
-  const { candles, quote, loading } = useStockData(symbol, interval, period)
+  const { candles, quote, loading, error } = useStockData(symbol, interval, period)
 
   const handleIntervalChange = useCallback((iv, p) => {
     setInterval(iv); setPeriod(p)
@@ -121,6 +121,12 @@ export default function App() {
             <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />
             <div className="chart-wrapper">
               {loading && <div className="loading-overlay">載入中…</div>}
+              {error && !loading && (
+                <div className="loading-overlay" style={{ color:'#c85a50', fontSize:13, flexDirection:'column', gap:8 }}>
+                  <div>⚠️ 無法載入 K 線資料</div>
+                  <div style={{ fontSize:11, opacity:0.7 }}>{error}</div>
+                </div>
+              )}
               <Chart
                 candles={candles}
                 indicators={indicators}
