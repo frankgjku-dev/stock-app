@@ -1086,3 +1086,55 @@ body {
   padding: 40px 20px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
 }
+
+/* 條件篩選面板 */
+.bt-cond-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.bt-cond-toggle {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 13px 18px; background: none; border: none; cursor: pointer;
+  color: var(--text-1); font-size: 13px; font-weight: 600; text-align: left;
+}
+.bt-cond-toggle:hover { background: var(--surface-2); }
+.bt-cond-icon { font-size: 10px; color: var(--text-3); }
+.bt-cond-badge {
+  margin-left: auto; font-size: 11px; font-weight: 400;
+  color: var(--accent); background: var(--accent-dim);
+  padding: 2px 10px; border-radius: 10px;
+}
+.bt-cond-body { padding: 4px 18px 16px; border-top: 1px solid var(--border); }
+.bt-cond-actions {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-top: 12px;
+}
+.bt-cond-btn {
+  background: var(--surface-2); border: 1px solid var(--border-md);
+  border-radius: 6px; padding: 4px 12px; font-size: 12px;
+  color: var(--text-2); cursor: pointer;
+}
+.bt-cond-btn:hover { background: var(--surface-3); }
+.bt-cond-hint { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+.bt-cond-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px;
+}
+.bt-cond-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2);
+  transition: border-color .15s, background .15s;
+}
+.bt-cond-item:hover   { background: var(--surface-3); }
+.bt-cond-item.selected {
+  border-color: var(--accent); background: var(--accent-dim);
+}
+.bt-cond-item input[type="checkbox"] { margin-top: 2px; accent-color: var(--accent); }
+.bt-cond-text { display: flex; flex-direction: column; gap: 2px; }
+.bt-cond-label { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.bt-cond-desc  { font-size: 11px; color: var(--text-3); }
+
+/* 條件摘要列 */
+.bt-cond-summary {
+  background: var(--accent-dim); border: 1px solid var(--accent-glow);
+  border-radius: 8px; padding: 8px 14px; font-size: 12px; color: var(--accent);
+}

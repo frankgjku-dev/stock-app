@@ -1145,14 +1145,21 @@ async def run_backtest(
     target_pct: float = 20.0,
     hold_days:  int   = 60,
     period:     str   = "3y",
+    conditions: str   = "",   # 要求通過的條件編號（逗號分隔），空=不限
 ):
     """
     VCP 突破策略回測（逐日 walk-forward）
-      買入：偵測到放量突破基準點（收盤 >= pivot，量 >= 50日均 × 1.5，VCP ≥ 2次收縮）
-      停損：收盤跌破買入價 × (1 - stop_pct%)
-      停利：收盤超過買入價 × (1 + target_pct%)
-      時間：持有超過 hold_days 天，強制平倉
-    初始資金假設為 100（方便計算報酬率），不考慮手續費。
+      買入：VCP 放量突破 + 選用 Trend Template 條件篩選
+      停損/停利/時間停損：依參數設定
+      conditions: "1,2,3,4,5,6,7,8" 各代表一個 Trend Template 條件
+        1. 收盤 > MA150
+        2. 收盤 > MA200
+        3. MA150 > MA200
+        4. MA200 向上（20日）
+        5. MA50 > MA150 且 > MA200
+        6. 收盤 > MA50
+        7. 距52週低點 +30% 以上
+        8. 距52週高點 75% 以內
     """
     loop = asyncio.get_event_loop()
     df_raw = await loop.run_in_executor(
@@ -1167,14 +1174,51 @@ async def run_backtest(
     dates  = [str(d)[:10] for d in df_raw[date_col]]
     closes = df_raw["Close"].values.astype(float)
     highs  = df_raw["High"].values.astype(float)
-    lows   = df_raw["Low"].values.astype(float)   # noqa: F841
+    lows   = df_raw["Low"].values.astype(float)
     vols   = df_raw["Volume"].values.astype(float)
+
+    # ── 解析需要的條件編號 ───────────────────────────────────
+    req_conds = set()
+    for x in conditions.split(","):
+        x = x.strip()
+        if x.isdigit():
+            req_conds.add(int(x))
+
+    # ── 向量化預計算 MA / 52週高低（避免迴圈內重複計算）─────
+    cs = pd.Series(closes)
+    hs = pd.Series(highs)
+    ls = pd.Series(lows)
+    ma50_a   = cs.rolling(50,  min_periods=1).mean().values
+    ma150_a  = cs.rolling(150, min_periods=1).mean().values
+    ma200_a  = cs.rolling(200, min_periods=1).mean().values
+    high52_a = hs.rolling(252, min_periods=1).max().values
+    low52_a  = ls.rolling(252, min_periods=1).min().values
+
+    def trend_ok(i: int) -> bool:
+        """回傳此 bar 是否通過所有選定的 Trend Template 條件"""
+        if not req_conds:
+            return True
+        c    = closes[i]
+        m50  = ma50_a[i];  m150 = ma150_a[i];  m200 = ma200_a[i]
+        h52  = high52_a[i]; l52  = low52_a[i]
+        ma200_up = bool(i >= 20 and m200 > ma200_a[i - 20])
+        cmap = {
+            1: c    > m150,
+            2: c    > m200,
+            3: m150 > m200,
+            4: ma200_up,
+            5: m50  > m150 and m50 > m200,
+            6: c    > m50,
+            7: c    >= l52 * 1.30,
+            8: c    >= h52 * 0.75,
+        }
+        return all(cmap.get(r, True) for r in req_conds)
 
     LOOKBACK = min(252, len(df_raw) // 3)
 
     # ── 在 executor 中跑逐日計算（blocking）──────────────────
-    trades_out   = []
-    equity_out   = []
+    trades_out = []
+    equity_out = []
 
     def _worker():
         equity      = 100.0
@@ -1220,20 +1264,18 @@ async def run_backtest(
 
             else:
                 # 每 3 天偵測一次（降低運算量）
-                if i % 3 == 0:
+                if i % 3 == 0 and trend_ok(i):
                     win_df = df_raw.iloc[max(0, i - LOOKBACK): i + 1]
-                    ma50   = float(np.mean(closes[max(0, i - 50): i])) if i >= 50 else float(np.mean(closes[:i + 1]))
-                    high52 = float(np.max(highs[max(0, i - 252): i + 1]))
-                    vcp    = detect_vcp(win_df, cur_close, ma50, high52)
+                    vcp    = detect_vcp(win_df, cur_close, float(ma50_a[i]), float(high52_a[i]))
                     pivot  = vcp.get("pivot", 0)
                     vol50  = float(np.mean(vols[max(0, i - 50): i])) if i >= 50 else float(np.mean(vols[:i + 1]))
 
                     is_breakout = (
                         pivot > 0
                         and cur_close >= pivot
-                        and cur_close <= pivot * 1.05          # 不追超過 5%
-                        and cur_vol   >= vol50 * 1.5           # 放量
-                        and vcp.get("contractions", 0) >= 2    # VCP 至少 2 次收縮
+                        and cur_close <= pivot * 1.05
+                        and cur_vol   >= vol50 * 1.5
+                        and vcp.get("contractions", 0) >= 2
                     )
                     if is_breakout:
                         in_trade    = True
