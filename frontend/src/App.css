@@ -1,39 +1,39 @@
 /* ═══════════════════════════════════════════════════════
-   奶茶色系 Design Tokens
+   深色 Design Tokens
 ═══════════════════════════════════════════════════════ */
 :root {
-  color-scheme: light;   /* 鎖定淺色模式，防止瀏覽器自動把 input 文字變成淺色 */
+  color-scheme: dark;
 
-  /* 背景層次 — 奶茶色（明亮奶油系） */
-  --bg:          #f0e6d3;   /* 最底：奶茶拿鐵 */
-  --surface:     #faf5ec;   /* 卡片：奶白 */
-  --surface-2:   #ede3cf;   /* 輸入框：米色 */
-  --surface-3:   #e4d6be;   /* hover：深米色 */
+  /* 背景層次 — 深色系 */
+  --bg:          #0d1117;
+  --surface:     #161b22;
+  --surface-2:   #1c2230;
+  --surface-3:   #21283a;
 
   /* 邊框 */
-  --border:      rgba(120, 88, 48, 0.12);
-  --border-md:   rgba(120, 88, 48, 0.20);
-  --border-hi:   rgba(120, 88, 48, 0.38);
+  --border:      rgba(255,255,255,0.08);
+  --border-md:   rgba(255,255,255,0.14);
+  --border-hi:   rgba(255,255,255,0.26);
 
   /* 文字 */
-  --text-1:      #1e140a;   /* 主文字：深焙，對比 15:1 ✅ */
-  --text-2:      #6b4f35;   /* 次文字：奶茶褐，對比 6:1 ✅ */
-  --text-3:      #7d5c3a;   /* 輔文字：調深（原 #a8906b 對比僅 2.4:1，看不見）→ 4.8:1 ✅ */
+  --text-1:      #e6edf3;
+  --text-2:      #8b949e;
+  --text-3:      #6e7681;
 
-  /* 強調色 — 焦糖 */
-  --accent:      #b86e2a;
-  --accent-dim:  rgba(184, 110, 42, 0.14);
-  --accent-glow: rgba(184, 110, 42, 0.28);
+  /* 強調色 — 藍色 */
+  --accent:      #4f7df0;
+  --accent-dim:  rgba(79,125,240,0.14);
+  --accent-glow: rgba(79,125,240,0.30);
 
-  /* 漲跌色 — 台股紅漲綠跌，暖化版 */
-  --up:          #c45a4a;
-  --up-dim:      rgba(196, 90, 74, 0.12);
-  --down:        #4a9460;
-  --down-dim:    rgba(74, 148, 96, 0.12);
+  /* 漲跌色 — 台股紅漲綠跌 */
+  --up:          #f07070;
+  --up-dim:      rgba(240,112,112,0.12);
+  --down:        #3fb950;
+  --down-dim:    rgba(63,185,80,0.12);
 
   /* 警示 */
-  --warn:        #b8860a;
-  --warn-dim:    rgba(184, 134, 10, 0.14);
+  --warn:        #e3b341;
+  --warn-dim:    rgba(227,179,65,0.14);
 
   /* 形狀 & 效果 */
   --r-sm:   6px;
@@ -335,7 +335,7 @@ body {
 .scan-btn {
   background: var(--accent);
   border: none; border-radius: var(--r-md);
-  color: #f2e8d4;
+  color: #fff;
   padding: 9px 24px;
   font-size: 13px; font-weight: 600;
   cursor: pointer;
@@ -1196,8 +1196,8 @@ body {
 .hd-sum-item { display: flex; flex-direction: column; gap: 2px; }
 .hd-sum-label { font-size: 11px; color: var(--text-3); }
 .hd-sum-val   { font-size: 20px; font-weight: 700; color: var(--text-1); }
-.hd-sum-val.up   { color: #c84040; }
-.hd-sum-val.down { color: #2e8b57; }
+.hd-sum-val.up   { color: var(--up); }
+.hd-sum-val.down { color: var(--down); }
 
 .hd-refresh {
   margin-left: auto;
