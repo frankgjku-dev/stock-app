@@ -96,31 +96,6 @@ export default function Calculator() {
   return (
     <div className="calc-page">
 
-      {/* ── 方法說明 ── */}
-      <div className="method-card" style={{ marginBottom: 20 }}>
-        <div className="method-header" onClick={() => setShowMethod(p => !p)}>
-          <span className="method-title">📋 計算方式說明</span>
-          <span className="method-toggle">{showMethod ? '▲ 收起' : '▼ 展開'}</span>
-        </div>
-        {showMethod && (
-          <>
-            <div className="method-pills">
-              {METHOD_INFO.map(p => (
-                <div key={p.label} className="method-pill" style={{ borderColor: '#455a64' }}>
-                  <span className="method-pill-label" style={{ color: '#90caf9' }}>{p.label}</span>
-                  <span className="method-pill-desc">{p.desc}</span>
-                </div>
-              ))}
-            </div>
-            <div className="method-note">
-              ℹ️ 應買股數 = （帳戶 × 風險%）÷（進場價 − 停損價），結果取整張（1000股為單位）。<br/>
-              漸進式建倉：第一筆只用 25% 部位，確認盈利後再分批加碼到滿倉，
-              不順的話損失有限，順的話才逐漸加碼。
-            </div>
-          </>
-        )}
-      </div>
-
       <h2 className="calc-title">部位計算機</h2>
 
       <div className="calc-layout">
@@ -264,6 +239,32 @@ export default function Calculator() {
           </div>
         </div>
       )}
+
+      {/* ── 方法說明（移至最底，不阻擋輸入欄）── */}
+      <div className="method-card">
+        <div className="method-header" onClick={() => setShowMethod(p => !p)}>
+          <span className="method-title">📋 計算方式說明</span>
+          <span className="method-toggle">{showMethod ? '▲ 收起' : '▼ 展開'}</span>
+        </div>
+        {showMethod && (
+          <>
+            <div className="method-pills">
+              {METHOD_INFO.map(p => (
+                <div key={p.label} className="method-pill">
+                  <span className="method-pill-label">{p.label}</span>
+                  <span className="method-pill-desc">{p.desc}</span>
+                </div>
+              ))}
+            </div>
+            <div className="method-note">
+              ℹ️ 應買股數 = （帳戶 × 風險%）÷（進場價 − 停損價），結果取整張（1000股為單位）。<br/>
+              漸進式建倉：第一筆只用 25% 部位，確認盈利後再分批加碼到滿倉，
+              不順的話損失有限，順的話才逐漸加碼。
+            </div>
+          </>
+        )}
+      </div>
+
     </div>
   )
 }
