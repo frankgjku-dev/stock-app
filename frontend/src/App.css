@@ -46,19 +46,30 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* 完整鎖死文件捲動，html/#root 也必須設定才能防止瀏覽器級別的 scroll */
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text-2);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', sans-serif;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
 }
 
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;   /* 防止整頁捲動把 topbar/tab-bar 捲走 */
 }
 
