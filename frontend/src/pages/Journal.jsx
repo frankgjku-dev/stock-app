@@ -24,6 +24,23 @@ const EMPTY_FORM = {
   reason: '', discipline: true, note: '', result: 'open',
 }
 
+// ── 必須定義在元件外部，否則每次 render 建立新函式 → input 失焦
+function F({ label, name, type = 'text', options, form, setForm, ...rest }) {
+  return (
+    <div className="jf-field">
+      <label className="jf-label">{label}</label>
+      {options
+        ? <select className="calc-input" value={form[name]}
+            onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))}>
+            {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
+        : <input className="calc-input" type={type} value={form[name]}
+            onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))}
+            {...rest} />}
+    </div>
+  )
+}
+
 export default function Journal() {
   const [trades,   setTrades]   = useState(loadTrades)
   const [showForm, setShowForm] = useState(false)
@@ -92,22 +109,6 @@ export default function Journal() {
 
   function deleteTrade(id) {
     if (confirm('確認刪除這筆交易？')) setTrades(p => p.filter(t => t.id !== id))
-  }
-
-  function F({ label, name, type = 'text', options, ...rest }) {
-    return (
-      <div className="jf-field">
-        <label className="jf-label">{label}</label>
-        {options
-          ? <select className="calc-input" value={form[name]}
-              onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))}>
-              {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-            </select>
-          : <input className="calc-input" type={type} value={form[name]}
-              onChange={e => setForm(p => ({ ...p, [name]: e.target.value }))}
-              {...rest} />}
-      </div>
-    )
   }
 
   const resultColor = r => r === 'win' ? '#4caf50' : r === 'loss' ? '#ef5350' : '#787b86'
@@ -196,16 +197,16 @@ export default function Journal() {
       {showForm && (
         <form className="journal-form" onSubmit={handleSubmit}>
           <div className="jf-row">
-            <F label="日期"   name="date"   type="date" />
-            <F label="股票代碼" name="symbol" placeholder="2330" />
-            <F label="名稱"   name="name"   placeholder="台積電" />
-            <F label="方向"   name="action" options={[{v:'buy',l:'做多 Buy'},{v:'sell',l:'做空 Sell'}]} />
+            <F label="日期"   name="date"   type="date"   form={form} setForm={setForm} />
+            <F label="股票代碼" name="symbol" placeholder="2330" form={form} setForm={setForm} />
+            <F label="名稱"   name="name"   placeholder="台積電" form={form} setForm={setForm} />
+            <F label="方向"   name="action" options={[{v:'buy',l:'做多 Buy'},{v:'sell',l:'做空 Sell'}]} form={form} setForm={setForm} />
           </div>
           <div className="jf-row">
-            <F label="進場價" name="entry"  type="number" step="0.01" placeholder="進場點位" />
-            <F label="停損價" name="stop"   type="number" step="0.01" placeholder="止損設定" />
-            <F label="出場價" name="exit"   type="number" step="0.01" placeholder="留空=未出場" />
-            <F label="股數"   name="shares" type="number" placeholder="股數" />
+            <F label="進場價" name="entry"  type="number" step="0.01" placeholder="進場點位"  form={form} setForm={setForm} />
+            <F label="停損價" name="stop"   type="number" step="0.01" placeholder="止損設定"  form={form} setForm={setForm} />
+            <F label="出場價" name="exit"   type="number" step="0.01" placeholder="留空=未出場" form={form} setForm={setForm} />
+            <F label="股數"   name="shares" type="number" placeholder="股數"                   form={form} setForm={setForm} />
           </div>
           <div className="jf-row">
             <div className="jf-field" style={{ flex: 2 }}>

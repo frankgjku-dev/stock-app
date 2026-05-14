@@ -7,6 +7,23 @@ const METHOD_INFO = [
   { label: '漸進式建倉',              desc: '第1筆獲利→才加第2筆→逐步放大' },
 ]
 
+// ── Field 必須定義在元件外部，否則每次 render 都會重新建立函式
+// → React 視為全新元件 → input 被卸載/重建 → 焦點丟失
+function Field({ label, value, onChange, prefix='', suffix='', hint='' }) {
+  return (
+    <div className="calc-field">
+      <label className="calc-label">{label}</label>
+      {hint && <span className="calc-hint">{hint}</span>}
+      <div className="calc-input-wrap">
+        {prefix && <span className="calc-affix">{prefix}</span>}
+        <input className="calc-input" type="number"
+          value={value} onChange={e => onChange(e.target.value)} />
+        {suffix && <span className="calc-affix">{suffix}</span>}
+      </div>
+    </div>
+  )
+}
+
 export default function Calculator() {
   const [account,  setAccount]  = useState(500000)
   const [riskPct,  setRiskPct]  = useState(1.5)
@@ -49,21 +66,6 @@ export default function Calculator() {
                   '趨勢強勁確認'][i],
     }))
   }, [calc, account, entry])
-
-  function Field({ label, value, onChange, prefix='', suffix='', hint='' }) {
-    return (
-      <div className="calc-field">
-        <label className="calc-label">{label}</label>
-        {hint && <span className="calc-hint">{hint}</span>}
-        <div className="calc-input-wrap">
-          {prefix && <span className="calc-affix">{prefix}</span>}
-          <input className="calc-input" type="number"
-            value={value} onChange={e => onChange(e.target.value)} />
-          {suffix && <span className="calc-affix">{suffix}</span>}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="calc-page">

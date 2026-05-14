@@ -97,21 +97,24 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
         <div className="bt-param-group">
           <label>停損 %</label>
           <input className="bt-input bt-num" type="number"
-            value={stopPct} onChange={e => setStopPct(+e.target.value)}
+            value={stopPct}
+            onChange={e => { const v = e.target.value; setStopPct(v === '' ? '' : +v) }}
             min={1} max={30} step={0.5} />
         </div>
 
         <div className="bt-param-group">
           <label>停利 %</label>
           <input className="bt-input bt-num" type="number"
-            value={targetPct} onChange={e => setTargetPct(+e.target.value)}
+            value={targetPct}
+            onChange={e => { const v = e.target.value; setTargetPct(v === '' ? '' : +v) }}
             min={5} max={200} step={1} />
         </div>
 
         <div className="bt-param-group">
           <label>最大持有天</label>
           <input className="bt-input bt-num" type="number"
-            value={holdDays} onChange={e => setHoldDays(+e.target.value)}
+            value={holdDays}
+            onChange={e => { const v = e.target.value; setHoldDays(v === '' ? '' : +v) }}
             min={10} max={365} step={5} />
         </div>
 
