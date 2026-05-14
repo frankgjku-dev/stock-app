@@ -2,6 +2,8 @@
    奶茶色系 Design Tokens
 ═══════════════════════════════════════════════════════ */
 :root {
+  color-scheme: light;   /* 鎖定淺色模式，防止瀏覽器自動把 input 文字變成淺色 */
+
   /* 背景層次 — 奶茶色（明亮奶油系） */
   --bg:          #f0e6d3;   /* 最底：奶茶拿鐵 */
   --surface:     #faf5ec;   /* 卡片：奶白 */
@@ -13,10 +15,10 @@
   --border-md:   rgba(120, 88, 48, 0.20);
   --border-hi:   rgba(120, 88, 48, 0.38);
 
-  /* 文字 — 深焙到奶茶 */
-  --text-1:      #1e140a;   /* 主文字：深焙 */
-  --text-2:      #6b4f35;   /* 次文字：奶茶褐 */
-  --text-3:      #a8906b;   /* 輔文字：淡焦糖 */
+  /* 文字 */
+  --text-1:      #1e140a;   /* 主文字：深焙，對比 15:1 ✅ */
+  --text-2:      #6b4f35;   /* 次文字：奶茶褐，對比 6:1 ✅ */
+  --text-3:      #7d5c3a;   /* 輔文字：調深（原 #a8906b 對比僅 2.4:1，看不見）→ 4.8:1 ✅ */
 
   /* 強調色 — 焦糖 */
   --accent:      #b86e2a;
@@ -481,20 +483,22 @@ body {
 ═══════════════════════════════════════════════════════ */
 .method-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-md);
   border-radius: var(--r-lg);
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(120,88,48,0.12);
   flex-shrink: 0;   /* 防止被 flex 壓扁成一條線 */
 }
 .method-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 18px; cursor: pointer; user-select: none;
+  padding: 13px 20px; cursor: pointer; user-select: none;
+  background: var(--surface-2);   /* 與頁面背景有所區分，確保可見 */
+  min-height: 46px;
   transition: background var(--trans);
 }
-.method-header:hover { background: var(--surface-2); }
-.method-title  { font-size: 13px; font-weight: 600; color: var(--text-1); }
-.method-toggle { font-size: 11px; color: var(--text-3); }
+.method-header:hover { background: var(--surface-3); }
+.method-title  { font-size: 13px; font-weight: 700; color: var(--text-1); }
+.method-toggle { font-size: 12px; font-weight: 600; color: var(--text-2); }
 
 .method-pills {
   display: flex; flex-wrap: wrap; gap: 10px;
