@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { API_BASE } from '../config'
 
 const METHOD_INFO = [
   { label: '單筆最大風險 1.25–2.5%', desc: '每筆交易虧損不超過帳戶的 2.5%' },
@@ -24,13 +25,46 @@ function Field({ label, value, onChange, prefix='', suffix='', hint='' }) {
   )
 }
 
-export default function Calculator() {
+export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
+  const [symbol,    setSymbol]    = useState('')
+  const [name,      setName]      = useState('')
   const [account,   setAccount]   = useState(500000)
   const [riskPct,   setRiskPct]   = useState(1.5)
   const [entry,     setEntry]     = useState('')
   const [stopPctIn, setStopPctIn] = useState('')   // 停損 % (e.g. 7 → 7%)
   const [targetR,   setTargetR]   = useState('')   // 目標 R 倍數 (e.g. 2 → 2R)
   const [showMethod, setShowMethod] = useState(false)  // 預設收起，避免佔掉太多畫面
+  const [added,     setAdded]     = useState(false)  // flash after adding
+
+  useEffect(() => {
+    const sym = symbol.trim()
+    if (sym.length < 4) { setName(''); return }
+    fetch(`${API_BASE}/api/stocks/search?q=${sym}`)
+      .then(r => r.json())
+      .then(arr => {
+        const found = arr.find(s => s.symbol === sym)
+        if (found) setName(found.name)
+      })
+      .catch(() => {})
+  }, [symbol])
+
+  function handleAddHolding() {
+    if (!calc || !symbol.trim() || calc.lots === 0) return
+    onAddHolding({
+      symbol:     symbol.trim(),
+      name:       name || symbol.trim(),
+      entryDate:  new Date().toISOString().slice(0, 10),
+      entryPrice: parseFloat(entry),
+      stopPct:    parseFloat(stopPctIn),
+      stopPrice:  calc.stopPrice,
+      lots:       calc.lots,
+      shares:     calc.shares,
+      targetR:    parseFloat(targetR) || null,
+      targetPrice: calc.targetPrice || null,
+    })
+    setAdded(true)
+    setTimeout(() => setAdded(false), 2500)
+  }
 
   const calc = useMemo(() => {
     const e   = parseFloat(entry)
@@ -101,6 +135,16 @@ export default function Calculator() {
       <div className="calc-layout">
         {/* 輸入 */}
         <div className="calc-inputs">
+          <div className="calc-field">
+            <label className="calc-label">股票代碼</label>
+            <div className="calc-input-wrap">
+              <input className="calc-input" type="text"
+                value={symbol}
+                onChange={e => setSymbol(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="例：2330" maxLength={6} />
+            </div>
+            {name && <div className="calc-computed">→ {name}</div>}
+          </div>
           <Field label="帳戶資金"             value={account}   onChange={setAccount}   prefix="NT$" />
           <Field label="單筆風險上限"          value={riskPct}   onChange={setRiskPct}   suffix="%" hint="建議 1.25%–2.5%" />
           <Field label="進場價（Pivot Point）" value={entry}     onChange={setEntry}     prefix="$" />
@@ -217,6 +261,21 @@ export default function Calculator() {
                 {calc.rr != null && calc.rr < 2 &&
                   <div className="disc-warn">⚠️ 損益比低於 2:1，建議調整目標或進場點</div>}
               </div>
+
+              {/* 加入持倉 */}
+              {symbol.trim() && calc.lots > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {added ? (
+                    <div className="hd-added-flash">✅ 已加入持倉！
+                      <button className="hd-go-btn" onClick={onSwitchToHoldings}>查看持倉 →</button>
+                    </div>
+                  ) : (
+                    <button className="hd-add-btn" onClick={handleAddHolding}>
+                      📌 加入持倉
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

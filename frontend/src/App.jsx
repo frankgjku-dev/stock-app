@@ -8,6 +8,7 @@ import Screener        from './pages/Screener'
 import Calculator      from './pages/Calculator'
 import Journal         from './pages/Journal'
 import Backtest        from './pages/Backtest'
+import Holdings        from './pages/Holdings'
 import useStockData    from './hooks/useStockData'
 
 const TABS = [
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'screener',   label: '選股 (Minervini)' },
   { id: 'backtest',   label: '回測' },
   { id: 'calculator', label: '部位計算機' },
+  { id: 'holdings',   label: '📊 持倉' },
   { id: 'journal',    label: '交易日誌' },
 ]
 
@@ -23,6 +25,11 @@ const DEFAULT_WATCHLIST = { groups: [] }
 function loadWatchlist() {
   try { return JSON.parse(localStorage.getItem('tw_watchlist') || 'null') || DEFAULT_WATCHLIST }
   catch { return DEFAULT_WATCHLIST }
+}
+
+function loadHoldings() {
+  try { return JSON.parse(localStorage.getItem('tw_holdings') || '[]') }
+  catch { return [] }
 }
 
 export default function App() {
@@ -36,11 +43,16 @@ export default function App() {
     ma5: true, ma10: true, ma20: true, ma60: true, ma120: false, ma240: false,
   })
   const [watchlist, setWatchlist] = useState(loadWatchlist)
+  const [holdings,  setHoldings]  = useState(loadHoldings)
   const chartClearRef = useRef(null)
 
   useEffect(() => {
     localStorage.setItem('tw_watchlist', JSON.stringify(watchlist))
   }, [watchlist])
+
+  useEffect(() => {
+    localStorage.setItem('tw_holdings', JSON.stringify(holdings))
+  }, [holdings])
 
   const { candles, quote, loading, error } = useStockData(symbol, interval, period)
 
@@ -81,6 +93,20 @@ export default function App() {
     }))
   }, [])
 
+  /* ── holdings operations ── */
+  const addHolding = useCallback((h) => {
+    setHoldings(prev => {
+      // avoid duplicate same symbol same entry date
+      const exists = prev.find(x => x.symbol === h.symbol && x.entryDate === h.entryDate && x.entryPrice === h.entryPrice)
+      if (exists) return prev
+      return [{ ...h, id: Date.now() }, ...prev]
+    })
+  }, [])
+
+  const removeHolding = useCallback((id) => {
+    setHoldings(prev => prev.filter(h => h.id !== id))
+  }, [])
+
   return (
     <div className="app">
       {/* ── 頂部 ── */}
@@ -105,6 +131,9 @@ export default function App() {
             onClick={() => setTab(t.id)}
           >
             {t.label}
+            {t.id === 'holdings' && holdings.length > 0 && (
+              <span className="tab-badge">{holdings.length}</span>
+            )}
           </button>
         ))}
       </div>
@@ -158,7 +187,19 @@ export default function App() {
         />
       )}
       {tab === 'backtest'   && <Backtest symbol={symbol} />}
-      {tab === 'calculator' && <Calculator />}
+      {tab === 'calculator' && (
+        <Calculator
+          onAddHolding={addHolding}
+          onSwitchToHoldings={() => setTab('holdings')}
+        />
+      )}
+      {tab === 'holdings' && (
+        <Holdings
+          holdings={holdings}
+          onRemove={removeHolding}
+          onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
+        />
+      )}
       {tab === 'journal'    && <Journal />}
     </div>
   )
