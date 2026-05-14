@@ -3,6 +3,7 @@ import { useRef } from 'react'
 const TOOLS = [
   { id: 'cursor',     icon: '↖',  label: '選取 / 移動 (Esc 取消選取)' },
   null,
+  { id: 'segment',    icon: '╱',  label: '直線：點兩下定兩端點，不延伸' },
   { id: 'trendline',  icon: '↗',  label: '趨勢線：點兩下定端點，雙向延伸' },
   { id: 'ray',        icon: '→',  label: '射線：點兩下，單向延伸' },
   { id: 'horizontal', icon: '—',  label: '水平線：點一下即完成' },

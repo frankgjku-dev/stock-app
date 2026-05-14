@@ -122,6 +122,22 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       : d.cursor ?? S.current.cursorPt
 
     switch (type) {
+      case 'segment': {
+        if (!p2) break
+        ctx.beginPath()
+        ctx.moveTo(p1.x, p1.y)
+        ctx.lineTo(p2.x, p2.y)
+        ctx.stroke()
+        ctx.setLineDash([])
+        // 兩端錨點
+        const anchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
+        anchors.forEach(p => {
+          ctx.beginPath(); ctx.arc(p.x, p.y, selected ? 5 : 3, 0, Math.PI*2)
+          ctx.fillStyle = strokeColor; ctx.fill()
+          ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
+        })
+        break
+      }
       case 'horizontal': {
         ctx.beginPath(); ctx.moveTo(0, p1.y); ctx.lineTo(W, p1.y); ctx.stroke()
         ctx.setLineDash([])
