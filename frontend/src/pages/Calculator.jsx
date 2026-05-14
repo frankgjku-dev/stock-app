@@ -25,40 +25,44 @@ function Field({ label, value, onChange, prefix='', suffix='', hint='' }) {
 }
 
 export default function Calculator() {
-  const [account,  setAccount]  = useState(500000)
-  const [riskPct,  setRiskPct]  = useState(1.5)
-  const [entry,    setEntry]    = useState('')
-  const [stop,     setStop]     = useState('')
-  const [target,   setTarget]   = useState('')
+  const [account,   setAccount]   = useState(500000)
+  const [riskPct,   setRiskPct]   = useState(1.5)
+  const [entry,     setEntry]     = useState('')
+  const [stopPctIn, setStopPctIn] = useState('')   // 停損 % (e.g. 7 → 7%)
+  const [targetR,   setTargetR]   = useState('')   // 目標 R 倍數 (e.g. 2 → 2R)
   const [showMethod, setShowMethod] = useState(true)
 
   const calc = useMemo(() => {
     const e   = parseFloat(entry)
-    const s   = parseFloat(stop)
-    const t   = parseFloat(target) || null
+    const sp  = parseFloat(stopPctIn)           // 停損 %
+    const tr  = parseFloat(targetR) || null     // 目標 R 倍
     const acc = parseFloat(account)
     const rp  = parseFloat(riskPct) / 100
-    if (!e || !s || !acc || !rp || e <= 0 || s <= 0 || e <= s) return null
+    if (!e || !sp || !acc || !rp || e <= 0 || sp <= 0 || sp >= 100) return null
+
+    const stopPrice  = e * (1 - sp / 100)                     // 停損實際價格
+    const targetPrice = tr && tr > 0 ? e + (e - stopPrice) * tr : null  // 目標實際價格
 
     const dollarRisk    = acc * rp
-    const stopDist      = e - s
-    const stopPct       = stopDist / e * 100
-    const rawShares     = dollarRisk / stopDist          // 精確股數（含小數）
-    const lots          = Math.floor(rawShares / 1000)   // 可買整張數
-    const shares        = lots * 1000                    // 整張對應股數
-    const sharesOdd     = Math.floor(rawShares)          // 零股最大股數
+    const stopDist      = e - stopPrice
+    const rawShares     = dollarRisk / stopDist
+    const lots          = Math.floor(rawShares / 1000)
+    const shares        = lots * 1000
+    const sharesOdd     = Math.floor(rawShares)
     const positionVal   = shares * e
     const positionPct   = shares > 0 ? positionVal / acc * 100 : 0
     const actualRisk    = shares * stopDist
     const actualRiskPct = shares > 0 ? actualRisk / acc * 100 : 0
-    const rr            = t && t > e ? (t - e) / stopDist : null
-    const targetProfit  = rr != null ? shares * (t - e) : null
+    const rr            = targetPrice ? tr : null
+    const targetProfit  = rr != null ? shares * (targetPrice - e) : null
     return {
       shares, lots, sharesOdd,
-      positionVal, positionPct, stopDist, stopPct,
+      stopPrice, targetPrice,
+      positionVal, positionPct,
+      stopDist, stopPct: sp,
       actualRisk, actualRiskPct, rr, targetProfit,
     }
-  }, [account, riskPct, entry, stop, target])
+  }, [account, riskPct, entry, stopPctIn, targetR])
 
   // Progressive Exposure 漸進式建倉
   const progressive = useMemo(() => {
@@ -122,11 +126,35 @@ export default function Calculator() {
       <div className="calc-layout">
         {/* 輸入 */}
         <div className="calc-inputs">
-          <Field label="帳戶資金"           value={account}  onChange={setAccount}  prefix="NT$" />
-          <Field label="單筆風險上限"        value={riskPct}  onChange={setRiskPct}  suffix="%" hint="建議 1.25%–2.5%" />
-          <Field label="進場價（Pivot Point）" value={entry}  onChange={setEntry}    prefix="$" />
-          <Field label="停損價"              value={stop}     onChange={setStop}     prefix="$" hint="Pivot 下方 5–8%" />
-          <Field label="目標價（選填）"       value={target}  onChange={setTarget}   prefix="$" />
+          <Field label="帳戶資金"             value={account}   onChange={setAccount}   prefix="NT$" />
+          <Field label="單筆風險上限"          value={riskPct}   onChange={setRiskPct}   suffix="%" hint="建議 1.25%–2.5%" />
+          <Field label="進場價（Pivot Point）" value={entry}     onChange={setEntry}     prefix="$" />
+
+          {/* 停損：輸入 %，自動換算成價格 */}
+          <div className="calc-field">
+            <label className="calc-label">停損幅度</label>
+            <span className="calc-hint">建議 5–8%</span>
+            <div className="calc-input-wrap">
+              <input className="calc-input" type="number"
+                value={stopPctIn} onChange={e => setStopPctIn(e.target.value)}
+                min={0.5} max={30} step={0.5} placeholder="例：7" />
+              <span className="calc-affix">%</span>
+            </div>
+            {calc && <div className="calc-computed">→ 停損價 ${calc.stopPrice.toFixed(2)}</div>}
+          </div>
+
+          {/* 目標：輸入 R 倍數，自動換算成價格 */}
+          <div className="calc-field">
+            <label className="calc-label">目標損益比（選填）</label>
+            <span className="calc-hint">建議 ≥ 2R</span>
+            <div className="calc-input-wrap">
+              <input className="calc-input" type="number"
+                value={targetR} onChange={e => setTargetR(e.target.value)}
+                min={0.5} max={20} step={0.5} placeholder="例：2" />
+              <span className="calc-affix">R</span>
+            </div>
+            {calc && calc.targetPrice && <div className="calc-computed">→ 目標價 ${calc.targetPrice.toFixed(2)}</div>}
+          </div>
         </div>
 
         {/* 結果 */}
@@ -164,8 +192,8 @@ export default function Calculator() {
               </div>
               <div className="result-card">
                 <div className="result-label">停損幅度</div>
-                <div className="result-val">{calc.stopPct.toFixed(2)}%</div>
-                <div className="result-sub">每股 ${calc.stopDist.toFixed(2)}</div>
+                <div className="result-val">{calc.stopPct.toFixed(1)}%</div>
+                <div className="result-sub">每股 ${calc.stopDist.toFixed(2)}　停損價 ${calc.stopPrice.toFixed(2)}</div>
               </div>
               {calc.rr != null && (
                 <div className="result-card success">
@@ -174,10 +202,10 @@ export default function Calculator() {
                     NT${calc.targetProfit?.toLocaleString(undefined,{maximumFractionDigits:0})}
                   </div>
                   <div className="result-sub">
-                    R:R = 1:{calc.rr.toFixed(2)}
-                    {calc.rr >= 3 ? ' ✅ 理想（≥3）'
-                     : calc.rr >= 2 ? ' ⚠️ 可接受（≥2）'
-                     : ' ❌ 偏低（<2）'}
+                    {calc.rr.toFixed(1)}R:1　目標價 ${calc.targetPrice?.toFixed(2)}
+                    {calc.rr >= 3 ? '　✅ 理想（≥3R）'
+                     : calc.rr >= 2 ? '　⚠️ 可接受（≥2R）'
+                     : '　❌ 偏低（<2R）'}
                   </div>
                 </div>
               )}
