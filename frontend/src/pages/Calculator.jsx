@@ -33,38 +33,60 @@ export default function Calculator() {
   const [showMethod, setShowMethod] = useState(true)
 
   const calc = useMemo(() => {
-    const e = parseFloat(entry), s = parseFloat(stop)
-    const t = parseFloat(target) || null
-    const acc = parseFloat(account), rp = parseFloat(riskPct) / 100
-    if (!e || !s || e <= 0 || s <= 0 || e <= s) return null
-    const dollarRisk   = acc * rp
-    const stopDist     = e - s
-    const stopPct      = stopDist / e * 100
-    const shares       = Math.floor(dollarRisk / stopDist / 1000) * 1000
-    const positionVal  = shares * e
-    const positionPct  = positionVal / acc * 100
-    const actualRisk   = shares * stopDist
-    const actualRiskPct = actualRisk / acc * 100
-    const rr = t && t > e ? (t - e) / stopDist : null
-    const targetProfit = rr ? shares * (t - e) : null
-    return { shares, positionVal, positionPct, stopDist, stopPct,
-             actualRisk, actualRiskPct, rr, targetProfit }
+    const e   = parseFloat(entry)
+    const s   = parseFloat(stop)
+    const t   = parseFloat(target) || null
+    const acc = parseFloat(account)
+    const rp  = parseFloat(riskPct) / 100
+    if (!e || !s || !acc || !rp || e <= 0 || s <= 0 || e <= s) return null
+
+    const dollarRisk    = acc * rp
+    const stopDist      = e - s
+    const stopPct       = stopDist / e * 100
+    const rawShares     = dollarRisk / stopDist          // 精確股數（含小數）
+    const lots          = Math.floor(rawShares / 1000)   // 可買整張數
+    const shares        = lots * 1000                    // 整張對應股數
+    const sharesOdd     = Math.floor(rawShares)          // 零股最大股數
+    const positionVal   = shares * e
+    const positionPct   = shares > 0 ? positionVal / acc * 100 : 0
+    const actualRisk    = shares * stopDist
+    const actualRiskPct = shares > 0 ? actualRisk / acc * 100 : 0
+    const rr            = t && t > e ? (t - e) / stopDist : null
+    const targetProfit  = rr != null ? shares * (t - e) : null
+    return {
+      shares, lots, sharesOdd,
+      positionVal, positionPct, stopDist, stopPct,
+      actualRisk, actualRiskPct, rr, targetProfit,
+    }
   }, [account, riskPct, entry, stop, target])
 
   // Progressive Exposure 漸進式建倉
   const progressive = useMemo(() => {
     if (!calc) return null
-    const stages = [0.25, 0.50, 0.75, 1.00]
-    const totalShares = Math.floor(parseFloat(account) * 0.20 / parseFloat(entry) / 1000) * 1000
-    return stages.map((pct, i) => ({
-      stage: i + 1,
-      label: ['初倉 25%', '加倉至 50%', '加倉至 75%', '滿倉 100%'][i],
-      shares: Math.round(totalShares * pct / 1000) * 1000,
-      condition: ['直接進場（Pivot 突破放量）',
-                  '第1筆浮盈 > 2%',
-                  '第2筆浮盈 > 2%',
-                  '趨勢強勁確認'][i],
-    }))
+    const acc = parseFloat(account)
+    const e   = parseFloat(entry)
+    if (!acc || !e || e <= 0) return null
+    // 以「張」為單位計算，避免小數乘法造成 0
+    const totalLots = Math.floor(acc * 0.20 / e / 1000)
+    if (totalLots === 0) return null   // 帳戶買不起 1 張，不顯示漸進表
+
+    const labels     = ['初倉 25%', '加倉至 50%', '加倉至 75%', '滿倉 100%']
+    const conditions = [
+      '直接進場（Pivot 突破放量）',
+      '第1筆浮盈 > 2%',
+      '第2筆浮盈 > 2%',
+      '趨勢強勁確認',
+    ]
+    return [0.25, 0.50, 0.75, 1.00].map((pct, i) => {
+      const stageLots = Math.max(1, Math.round(totalLots * pct))
+      return {
+        stage:     i + 1,
+        label:     labels[i],
+        lots:      stageLots,
+        shares:    stageLots * 1000,
+        condition: conditions[i],
+      }
+    })
   }, [calc, account, entry])
 
   return (
@@ -114,8 +136,17 @@ export default function Calculator() {
             <>
               <div className="result-card primary">
                 <div className="result-label">應買張數</div>
-                <div className="result-val">{(calc.shares / 1000).toFixed(0)} 張</div>
-                <div className="result-sub">{calc.shares.toLocaleString()} 股</div>
+                {calc.lots > 0 ? (
+                  <>
+                    <div className="result-val">{calc.lots} 張</div>
+                    <div className="result-sub">{calc.shares.toLocaleString()} 股</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="result-val" style={{ color: '#e0a800', fontSize: 18 }}>不足 1 張</div>
+                    <div className="result-sub">零股可買 {calc.sharesOdd.toLocaleString()} 股</div>
+                  </>
+                )}
               </div>
               <div className="result-card">
                 <div className="result-label">部位金額</div>
@@ -154,13 +185,15 @@ export default function Calculator() {
               {/* 紀律提醒 */}
               <div className="discipline-box">
                 <div className="disc-title">紀律提醒</div>
+                {calc.lots === 0 &&
+                  <div className="disc-warn">⚠️ 風險計算所得股數不足 1 張，考慮以零股（{calc.sharesOdd} 股）操作或擴大資金</div>}
                 {calc.stopPct > 8 &&
                   <div className="disc-warn">⚠️ 停損超過 8%，Minervini 建議最大 7–8%</div>}
-                {calc.actualRiskPct > 2.5 &&
+                {calc.lots > 0 && calc.actualRiskPct > 2.5 &&
                   <div className="disc-warn">⚠️ 風險超過 2.5%，請縮小部位</div>}
                 {calc.positionPct > 30 &&
                   <div className="disc-warn">⚠️ 單一持股超過 30%，留意集中風險</div>}
-                {calc.stopPct <= 8 && calc.actualRiskPct <= 2.5 &&
+                {calc.lots > 0 && calc.stopPct <= 8 && calc.actualRiskPct <= 2.5 &&
                   <div className="disc-ok">✅ 風險控制在合理範圍</div>}
                 {calc.rr != null && calc.rr < 2 &&
                   <div className="disc-warn">⚠️ 損益比低於 2:1，建議調整目標或進場點</div>}
@@ -180,7 +213,7 @@ export default function Calculator() {
               <div key={s.stage} className="prog-card">
                 <div className="prog-stage">第 {s.stage} 筆</div>
                 <div className="prog-label">{s.label}</div>
-                <div className="prog-shares">{(s.shares/1000).toFixed(0)} 張</div>
+                <div className="prog-shares">{s.lots} 張</div>
                 <div className="prog-cond">條件：{s.condition}</div>
               </div>
             ))}
