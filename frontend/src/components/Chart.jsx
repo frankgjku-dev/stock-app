@@ -62,13 +62,16 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       if (!range) return null
       time = range.to
     }
-    // coordinateToPrice returns null in scaleMargin areas (top/bottom padding).
-    // Clamp y to the chart interior so it always resolves to a price.
+    // coordinateToPrice returns null outside the price scale area.
+    // Scan vertically to find the nearest valid price if needed.
     let price = series.candle.coordinateToPrice(y)
     if (price == null) {
-      const H = containerRef.current?.clientHeight ?? 0
-      const clampedY = Math.max(H * 0.09, Math.min(H * 0.72, y))
-      price = series.candle.coordinateToPrice(clampedY)
+      const H = containerRef.current?.clientHeight ?? 600
+      for (let step = 5; step <= H / 2; step += 5) {
+        price = series.candle.coordinateToPrice(Math.max(0, y - step))
+               ?? series.candle.coordinateToPrice(Math.min(H, y + step))
+        if (price != null) break
+      }
     }
     return price != null ? { time, price: Number(price) } : null
   }
@@ -253,7 +256,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
         vertLine: { color:'#b86e2a66', labelBackgroundColor:'#b86e2a' },
         horzLine: { color:'#b86e2a66', labelBackgroundColor:'#b86e2a' },
       },
-      rightPriceScale: { borderColor:'rgba(140,100,60,0.18)', scaleMargins:{ top:0.08, bottom:0.24 } },
+      rightPriceScale: { borderColor:'rgba(140,100,60,0.18)' },
       timeScale: { borderColor:'rgba(140,100,60,0.18)', timeVisible:true },
     })
     S.current.chart = chart
@@ -262,6 +265,8 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       upColor:CANDLE_UP, downColor:CANDLE_DOWN,
       borderVisible:false, wickUpColor:CANDLE_UP, wickDownColor:CANDLE_DOWN,
     })
+    // 讓 K 線只佔上方 76%，留空間給成交量
+    cs.priceScale().applyOptions({ scaleMargins:{ top:0.05, bottom:0.24 } })
     S.current.series.candle = cs
 
     const vs = chart.addHistogramSeries({ priceFormat:{ type:'volume' }, priceScaleId:'vol' })
