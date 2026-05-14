@@ -62,7 +62,14 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       if (!range) return null
       time = range.to
     }
-    const price = series.candle.coordinateToPrice(y)
+    // coordinateToPrice returns null in scaleMargin areas (top/bottom padding).
+    // Clamp y to the chart interior so it always resolves to a price.
+    let price = series.candle.coordinateToPrice(y)
+    if (price == null) {
+      const H = containerRef.current?.clientHeight ?? 0
+      const clampedY = Math.max(H * 0.09, Math.min(H * 0.72, y))
+      price = series.candle.coordinateToPrice(clampedY)
+    }
     return price != null ? { time, price: Number(price) } : null
   }
 
