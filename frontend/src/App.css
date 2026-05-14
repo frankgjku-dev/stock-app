@@ -48,29 +48,30 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* 鎖死文件捲動：html 只設 overflow，body/.app 用 100vh 明確高度 */
-html {
-  overflow: hidden;   /* 防止 document 層級的 scroll，不改高度避免循環參考 */
+html, body {
+  height: 100vh;
+  overflow: hidden;
 }
 
 body {
   background: var(--bg);
   color: var(--text-2);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', sans-serif;
-  height: 100vh;
-  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
 #root {
-  height: 100%;   /* 100% of body = 100vh，parent 有明確高度所以安全 */
+  height: 100vh;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .app {
   display: flex;
   flex-direction: column;
-  height: 100%;   /* 100% of #root = 100vh */
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
