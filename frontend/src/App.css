@@ -529,9 +529,6 @@ body {
   padding: 28px 32px;
   display: flex; flex-direction: column; gap: 22px;
 }
-/* 防止 flex 子元素被壓縮，讓 overflow-y:auto 負責捲動 */
-.calc-page > * { flex-shrink: 0; }
-
 .calc-title    { font-size: 20px; font-weight: 700; color: var(--text-1); }
 .calc-subtitle { font-size: 13px; color: var(--text-2); }
 
@@ -643,8 +640,6 @@ body {
   padding: 24px 28px;
   display: flex; flex-direction: column; gap: 18px;
 }
-.journal-page > * { flex-shrink: 0; }
-
 /* ── 連續虧損警示 ──────────────────────────────────────── */
 .consec-loss-warn {
   display: flex;
@@ -1014,7 +1009,6 @@ body {
   flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px;
   display: flex; flex-direction: column; gap: 20px;
 }
-.backtest-page > * { flex-shrink: 0; }
 
 /* 參數列 */
 .bt-params {
