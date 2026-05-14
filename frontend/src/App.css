@@ -393,6 +393,8 @@ body {
   overflow-x: auto;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 .screener-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .screener-table thead th {
@@ -482,9 +484,10 @@ body {
    METHOD CARD（共用）
 ═══════════════════════════════════════════════════════ */
 .method-card {
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--border-md);
   border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -494,7 +497,7 @@ body {
   min-height: 46px;
   transition: background var(--trans);
 }
-.method-header:hover { background: var(--surface-3); }
+.method-header:hover { background: var(--surface-2); }
 .method-title  { font-size: 13px; font-weight: 700; color: var(--text-1); }
 .method-toggle { font-size: 12px; font-weight: 600; color: var(--text-2); }
 
