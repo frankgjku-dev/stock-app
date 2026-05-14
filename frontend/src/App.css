@@ -4,11 +4,11 @@
 :root {
   color-scheme: light;   /* 鎖定淺色模式，防止瀏覽器自動把 input 文字變成淺色 */
 
-  /* 背景層次 */
-  --bg:          #f0e6d3;   /* 最底頁面背景：奶茶米 */
-  --surface:     #ffffff;   /* 卡片/面板/topbar：白色，與背景明顯區分 */
-  --surface-2:   #f5ede0;   /* 輸入框/次層：淡奶茶 */
-  --surface-3:   #ede3cf;   /* hover/三層：深米色 */
+  /* 背景層次 — 奶茶色（明亮奶油系） */
+  --bg:          #f0e6d3;   /* 最底：奶茶拿鐵 */
+  --surface:     #faf5ec;   /* 卡片：奶白 */
+  --surface-2:   #ede3cf;   /* 輸入框：米色 */
+  --surface-3:   #e4d6be;   /* hover：深米色 */
 
   /* 邊框 */
   --border:      rgba(120, 88, 48, 0.12);
