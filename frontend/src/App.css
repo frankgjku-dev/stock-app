@@ -2,8 +2,6 @@
    奶茶色系 Design Tokens
 ═══════════════════════════════════════════════════════ */
 :root {
-  color-scheme: light;   /* 防止瀏覽器深色模式自動覆蓋 input 文字顏色 */
-
   /* 背景層次 — 奶茶色（明亮奶油系） */
   --bg:          #f0e6d3;   /* 最底：奶茶拿鐵 */
   --surface:     #faf5ec;   /* 卡片：奶白 */
@@ -15,10 +13,10 @@
   --border-md:   rgba(120, 88, 48, 0.20);
   --border-hi:   rgba(120, 88, 48, 0.38);
 
-  /* 文字 — 深焙到奶茶（對比度已調整至 WCAG AA 標準）*/
-  --text-1:      #1e140a;   /* 主文字：深焙，對比 15:1 */
-  --text-2:      #5a3e28;   /* 次文字：深焦糖，對比 7.5:1 */
-  --text-3:      #7a5c3e;   /* 輔文字：中焦糖，對比 4.7:1（原 #a8906b 僅 2.4:1）*/
+  /* 文字 — 深焙到奶茶 */
+  --text-1:      #1e140a;   /* 主文字：深焙 */
+  --text-2:      #6b4f35;   /* 次文字：奶茶褐 */
+  --text-3:      #a8906b;   /* 輔文字：淡焦糖 */
 
   /* 強調色 — 焦糖 */
   --accent:      #b86e2a;
@@ -483,21 +481,20 @@ body {
 ═══════════════════════════════════════════════════════ */
 .method-card {
   background: var(--surface);
-  border: 1.5px solid var(--border-md);
+  border: 1px solid var(--border);
   border-radius: var(--r-lg);
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;   /* 防止被 flex 壓扁成一條線 */
 }
 .method-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; cursor: pointer; user-select: none;
-  background: var(--surface-2);
+  padding: 12px 18px; cursor: pointer; user-select: none;
   transition: background var(--trans);
-  min-height: 48px;
 }
-.method-header:hover { background: var(--surface-3); }
-.method-title  { font-size: 13px; font-weight: 700; color: var(--text-1); }
-.method-toggle { font-size: 12px; color: var(--text-2); font-weight: 600; }
+.method-header:hover { background: var(--surface-2); }
+.method-title  { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.method-toggle { font-size: 11px; color: var(--text-3); }
 
 .method-pills {
   display: flex; flex-wrap: wrap; gap: 10px;
@@ -514,9 +511,9 @@ body {
 }
 .method-pill:hover { border-color: var(--border-hi); }
 .method-pill-label { font-size: 12px; font-weight: 700; }
-.method-pill-desc  { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.method-pill-desc  { font-size: 11px; color: var(--text-2); line-height: 1.5; }
 .method-note {
-  font-size: 12px; color: var(--text-2);
+  font-size: 12px; color: var(--text-3);
   padding: 12px 18px 14px; line-height: 1.7;
   border-top: 1px solid var(--border);
 }
@@ -542,16 +539,16 @@ body {
 }
 .calc-field { display: flex; flex-direction: column; gap: 5px; }
 .calc-label {
-  font-size: 12px; color: var(--text-2);
-  font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  font-size: 11px; color: var(--text-3);
+  font-weight: 600; text-transform: uppercase; letter-spacing: .6px;
 }
-.calc-hint     { font-size: 12px; color: var(--text-2); }
+.calc-hint     { font-size: 11px; color: var(--text-3); }
 .calc-computed { font-size: 12px; color: var(--accent); margin-top: 4px; font-weight: 600; }
 .calc-input-wrap { display: flex; align-items: center; }
 .calc-affix {
   background: var(--surface-2);
   border: 1px solid var(--border-md);
-  color: var(--text-2); padding: 8px 12px; font-size: 13px;
+  color: var(--text-3); padding: 8px 12px; font-size: 13px;
 }
 .calc-affix:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); border-right: none; }
 .calc-affix:last-child  { border-radius: 0 var(--r-sm) var(--r-sm) 0; border-left: none; }
@@ -609,7 +606,7 @@ body {
   padding: 14px 20px;
   display: flex; flex-direction: column; gap: 7px;
 }
-.disc-title { font-size: 11px; color: var(--text-2); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+.disc-title { font-size: 11px; color: var(--text-3); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
 .disc-warn  { font-size: 12px; color: var(--warn); }
 .disc-ok    { font-size: 12px; color: var(--down); }
 
@@ -668,7 +665,7 @@ body {
   flex: 1; min-width: 110px; text-align: center;
   box-shadow: var(--shadow-sm);
 }
-.stat-label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+.stat-label { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
 .stat-val   { font-size: 20px; font-weight: 700; }
 
 .journal-form {
@@ -685,7 +682,7 @@ body {
   flex: 1; min-width: 130px;
 }
 .jf-label {
-  font-size: 12px; color: var(--text-2);
+  font-size: 11px; color: var(--text-3);
   font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
 }
 .r-preview {
@@ -1065,7 +1062,7 @@ body {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 14px 18px; min-width: 110px; flex: 1;
 }
-.bt-stat-label { font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+.bt-stat-label { font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
 .bt-stat-value { font-size: 22px; font-weight: 700; color: var(--text-1); }
 
 /* 圖表 */
