@@ -45,37 +45,6 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     cursorPt: { x:0, y:0 },
   })
 
-  /* ── 座標換算（都用 containerRef 為基準）─────────── */
-  function getChartXY(e) {
-    const rect = containerRef.current.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
-  }
-
-  function toData(x, y) {
-    const { chart, series } = S.current
-    if (!chart || !series.candle) return null
-    let time = chart.timeScale().coordinateToTime(x)
-    // coordinateToTime returns null in the right margin (past last bar).
-    // Fall back to the last visible time so drawing still works there.
-    if (time == null) {
-      const range = chart.timeScale().getVisibleRange()
-      if (!range) return null
-      time = range.to
-    }
-    // coordinateToPrice returns null outside the price scale area.
-    // Scan vertically to find the nearest valid price if needed.
-    let price = series.candle.coordinateToPrice(y)
-    if (price == null) {
-      const H = containerRef.current?.clientHeight ?? 600
-      for (let step = 5; step <= H / 2; step += 5) {
-        price = series.candle.coordinateToPrice(Math.max(0, y - step))
-               ?? series.candle.coordinateToPrice(Math.min(H, y + step))
-        if (price != null) break
-      }
-    }
-    return price != null ? { time, price: Number(price) } : null
-  }
-
   function toPixel(price, time) {
     const { chart, series } = S.current
     if (!chart || !series.candle) return null
@@ -282,7 +251,64 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
 
     // 圖表平移/縮放時重繪覆蓋層
     chart.timeScale().subscribeVisibleLogicalRangeChange(redraw)
-    chart.subscribeCrosshairMove(redraw)
+
+    // ── crosshair 移動：更新 preview 預覽線位置 ──
+    chart.subscribeCrosshairMove(param => {
+      if (param.point && S.current.preview) {
+        S.current.preview.cursor = param.point
+      }
+      redraw()
+    })
+
+    // ── 圖表原生 click：用於畫線（不需自己換算座標）──
+    chart.subscribeClick(param => {
+      const tool = activeToolRef.current
+      if (tool === 'cursor') {
+        // cursor 模式：選取繪圖
+        if (param.point) {
+          const { x, y } = param.point
+          const { drawings } = S.current
+          let hit = -1
+          for (let i = drawings.length - 1; i >= 0; i--) {
+            if (hitTest(drawings[i], x, y)) { hit = i; break }
+          }
+          S.current.selectedIdx = hit
+          redraw()
+        }
+        return
+      }
+
+      if (!param.point || !param.time) return
+
+      // 取得點擊位置的價格
+      let price = cs.coordinateToPrice(param.point.y)
+      if (price == null) {
+        // 掃描附近找有效價格
+        for (let step = 5; step <= 200; step += 5) {
+          price = cs.coordinateToPrice(Math.max(0, param.point.y - step))
+                  ?? cs.coordinateToPrice(param.point.y + step)
+          if (price != null) break
+        }
+      }
+      if (price == null) return
+
+      const dp = { time: param.time, price: Number(price) }
+      const color = drawColorRef.current
+      const oneClick = tool === 'horizontal' || tool === 'vertical'
+
+      if (!S.current.preview) {
+        if (oneClick) {
+          S.current.drawings.push({ type: tool, pts: [dp], color })
+        } else {
+          S.current.preview = { type: tool, pts: [dp], color, cursor: param.point }
+        }
+      } else {
+        const prev = S.current.preview
+        S.current.drawings.push({ type: prev.type, pts: [...prev.pts, dp], color: prev.color })
+        S.current.preview = null
+      }
+      redraw()
+    })
 
     syncCanvas()
 
@@ -343,79 +369,34 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  /* ── 繪圖事件（透明 overlay div）─────────────── */
-  const activeToolRef  = useRef(activeTool)
-  const drawColorRef   = useRef(drawColor)
+  /* ── activeToolRef / drawColorRef ────────────── */
+  const activeToolRef = useRef(activeTool)
+  const drawColorRef  = useRef(drawColor)
   activeToolRef.current = activeTool
   drawColorRef.current  = drawColor
 
-  function handleOverlayDown(e) {
-    if (e.button !== 0) return
-    const tool  = activeToolRef.current
-    const color = drawColorRef.current
-    const { x, y } = getChartXY(e)
-
-    if (tool === 'cursor') {
-      // 選取 / 取消選取
-      const { drawings } = S.current
-      let hit = -1
-      for (let i=drawings.length-1; i>=0; i--) {
-        if (hitTest(drawings[i], x, y)) { hit=i; break }
-      }
-      S.current.selectedIdx = hit; redraw(); return
+  /* ── 畫線模式：停用拖曳平移，游標改為十字 ────── */
+  useEffect(() => {
+    const { chart } = S.current
+    if (!chart) return
+    const drawing = activeTool !== 'cursor'
+    chart.applyOptions({
+      handleScroll: { pressedMouseMove: !drawing, mouseWheel: true, horzTouchDrag: !drawing },
+      handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: !drawing },
+    })
+    // 更新容器滑鼠樣式
+    if (containerRef.current) {
+      containerRef.current.style.cursor = drawing ? 'crosshair' : 'default'
     }
-
-    const dp = toData(x, y)
-    if (!dp) return
-
-    const oneClick = tool==='horizontal' || tool==='vertical'
-
-    if (!S.current.preview) {
-      if (oneClick) {
-        S.current.drawings.push({ type:tool, pts:[dp], color })
-      } else {
-        S.current.preview = { type:tool, pts:[dp], color, cursor:{ x, y } }
-      }
-    } else {
-      // 第二點 → 完成
-      const prev = S.current.preview
-      S.current.drawings.push({ type:prev.type, pts:[...prev.pts, dp], color:prev.color })
-      S.current.preview = null
-    }
-    redraw()
-  }
-
-  function handleOverlayMove(e) {
-    const { x, y } = getChartXY(e)
-    S.current.cursorPt = { x, y }
-    if (S.current.preview) {
-      S.current.preview.cursor = { x, y }
-      redraw()
-    }
-  }
-
-  function handleOverlayContext(e) {
-    e.preventDefault()
-    if (S.current.preview) {
-      S.current.preview = null
-    } else if (S.current.selectedIdx >= 0) {
-      S.current.drawings = S.current.drawings.filter((_,i)=>i!==S.current.selectedIdx)
-      S.current.selectedIdx = -1
-    } else if (S.current.drawings.length) {
-      S.current.drawings = S.current.drawings.slice(0,-1)
-    }
-    redraw()
-  }
-
-  const isDrawingMode = activeTool !== 'cursor'
+  }, [activeTool])
 
   return (
     <div style={{ position:'relative', width:'100%', height:'100%' }}>
 
-      {/* lightweight-charts 掌控的圖表容器 */}
+      {/* lightweight-charts 掌控的圖表容器（原生 click 事件在這裡觸發） */}
       <div ref={containerRef} style={{ width:'100%', height:'100%' }} />
 
-      {/* 繪圖畫布：永遠不攔截事件 */}
+      {/* 繪圖畫布：不攔截事件，只負責渲染繪圖 */}
       <canvas
         ref={canvasRef}
         style={{
@@ -424,23 +405,6 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
           pointerEvents:'none',
         }}
       />
-
-      {/* 繪圖模式時的透明攔截層：
-          蓋在最上面攔截點擊，阻止圖表平移，
-          我們自己換算座標再繪圖 */}
-      {isDrawingMode && (
-        <div
-          style={{
-            position:'absolute', top:0, left:0,
-            width:'100%', height:'100%',
-            cursor:'crosshair',
-            zIndex:10,
-          }}
-          onMouseDown={handleOverlayDown}
-          onMouseMove={handleOverlayMove}
-          onContextMenu={handleOverlayContext}
-        />
-      )}
     </div>
   )
 }
