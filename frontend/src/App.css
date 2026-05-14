@@ -59,6 +59,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;   /* 防止整頁捲動把 topbar/tab-bar 捲走 */
 }
 
 /* ── Top Bar ──────────────────────────────────────────── */

@@ -30,7 +30,7 @@ export default function Calculator() {
   const [entry,     setEntry]     = useState('')
   const [stopPctIn, setStopPctIn] = useState('')   // 停損 % (e.g. 7 → 7%)
   const [targetR,   setTargetR]   = useState('')   // 目標 R 倍數 (e.g. 2 → 2R)
-  const [showMethod, setShowMethod] = useState(true)
+  const [showMethod, setShowMethod] = useState(false)  // 預設收起，避免佔掉太多畫面
 
   const calc = useMemo(() => {
     const e   = parseFloat(entry)
@@ -132,12 +132,20 @@ export default function Calculator() {
 
           {/* 停損：輸入 %，自動換算成價格 */}
           <div className="calc-field">
-            <label className="calc-label">停損幅度</label>
-            <span className="calc-hint">建議 5–8%</span>
+            <label className="calc-label">
+              停損幅度
+              {parseFloat(entry) > 0 && !parseFloat(stopPctIn) &&
+                <span style={{ color: '#c85a50', marginLeft: 6, fontSize: 11 }}>← 請填此欄</span>
+              }
+            </label>
+            <span className="calc-hint">建議 5–8%，輸入後自動換算停損價</span>
             <div className="calc-input-wrap">
               <input className="calc-input" type="number"
                 value={stopPctIn} onChange={e => setStopPctIn(e.target.value)}
-                min={0.5} max={30} step={0.5} placeholder="例：7" />
+                min={0.5} max={30} step={0.5} placeholder="例：7"
+                style={parseFloat(entry) > 0 && !parseFloat(stopPctIn)
+                  ? { borderColor: '#c85a50', boxShadow: '0 0 0 2px rgba(200,90,80,0.2)' }
+                  : {}} />
               <span className="calc-affix">%</span>
             </div>
             {calc && <div className="calc-computed">→ 停損價 ${calc.stopPrice.toFixed(2)}</div>}
@@ -159,7 +167,15 @@ export default function Calculator() {
 
         {/* 結果 */}
         <div className="calc-results">
-          {!calc && <div className="calc-empty">填寫左側數字後自動計算</div>}
+          {!calc && (
+            <div className="calc-empty">
+              {!parseFloat(entry)
+                ? '① 請輸入進場價'
+                : !parseFloat(stopPctIn)
+                  ? '② 請輸入停損幅度（%）'
+                  : '填寫完成後自動計算'}
+            </div>
+          )}
           {calc && (
             <>
               <div className="result-card primary">
