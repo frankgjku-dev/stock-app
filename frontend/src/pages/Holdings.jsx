@@ -17,7 +17,8 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
         if (data.price != null && !data.error) results[h.symbol] = data
       } catch {}
     }))
-    setPrices(results)
+    // 用 merge 而非覆蓋：某支股票抓取失敗時保留舊資料
+    setPrices(prev => ({ ...prev, ...results }))
     setLoading(false)
   }, [holdings])
 
@@ -124,13 +125,13 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
                             }} title="市場收盤，顯示最近收盤價">收盤</span>
                           )}
                         </div>
-                        {r.changePct != null && r.changePct !== 0 && (
+                        {r.changePct != null && (
                           <div style={{
                             fontSize: 11,
-                            color: r.changePct >= 0 ? '#4caf50' : '#ef5350',
+                            color: r.changePct > 0 ? '#4caf50' : r.changePct < 0 ? '#ef5350' : '#787b86',
                           }}>
-                            {r.changePct >= 0 ? '+' : ''}{Number(r.change).toFixed(2)}
-                            {' '}({r.changePct >= 0 ? '+' : ''}{Number(r.changePct).toFixed(2)}%)
+                            {r.changePct > 0 ? '+' : ''}{Number(r.change).toFixed(2)}
+                            {' '}({r.changePct > 0 ? '+' : ''}{Number(r.changePct).toFixed(2)}%)
                           </div>
                         )}
                       </div>

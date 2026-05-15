@@ -1182,11 +1182,11 @@ async def get_quote(symbol: str):
             try:
                 loop = asyncio.get_event_loop()
                 yf_data = await loop.run_in_executor(executor, _yf_quote, symbol)
-                # 若 yfinance 有更新的價格就用，否則退回 TWSE prev_close
+                # yfinance 有拿到價格就用（無論是否和 prev_close 相同）
                 yf_price = yf_data.get("price", 0)
-                if yf_price and yf_price != prev:
+                if yf_price:
                     return yf_data
-                # yfinance 與 TWSE prev_close 一樣 → 直接回傳 TWSE 資料
+                # yfinance 也沒有 → 退回 TWSE prev_close
                 price = prev
                 return {
                     "symbol": symbol, "name": item.get("n", STOCK_LIST.get(symbol, symbol)),
