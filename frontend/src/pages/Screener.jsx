@@ -842,9 +842,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
               })}
             </tbody>
           </table>
-          </div>  {/* table-scroll-body */}
+          </div>
           )}
-        </div>  {/* table-wrap */}
+        </div>
       )}
     </div>
   )
