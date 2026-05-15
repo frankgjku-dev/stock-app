@@ -1314,6 +1314,7 @@ body {
 .hd-name { font-size: 11px; color: var(--text-3); margin-top: 1px; }
 .hd-cur  { font-weight: 600; }
 .hd-orange { color: #e0a800; font-weight: 600; }
+.hd-target-near { color: #26a69a; font-weight: 600; }
 
 .hd-btn {
   background: none; border: 1px solid var(--border-md);

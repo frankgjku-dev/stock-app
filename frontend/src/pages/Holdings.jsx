@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { API_BASE } from '../config'
 
-export default function Holdings({ holdings, onRemove, onSelectStock }) {
-  const [prices, setPrices]   = useState({})
-  const [loading, setLoading] = useState(false)
-  const [added, setAdded]     = useState(null)   // flash message
+export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }) {
+  const [prices,        setPrices]       = useState({})
+  const [loading,       setLoading]      = useState(false)
+  const [added,         setAdded]        = useState(null)      // flash message
+  const [editTarget,    setEditTarget]   = useState(null)      // id of row being edited
+  const [editTargetVal, setEditTargetVal] = useState('')       // input value
 
   const fetchPrices = useCallback(async () => {
     if (!holdings.length) return
@@ -29,16 +31,19 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
   }, [fetchPrices])
 
   const rows = holdings.map(h => {
-    const q          = prices[h.symbol]
-    const curPrice   = q?.price   ?? null
-    const changePct  = q?.change_pct ?? null
-    const change     = q?.change    ?? null
-    const prevClose  = q?.prev_close ?? null
-    const source     = q?.source    ?? null   // 'twse_live' | 'twse_prev_close' | 'yfinance'
-    const pnlPct     = curPrice != null ? (curPrice - h.entryPrice) / h.entryPrice * 100 : null
-    const pnlAmt     = curPrice != null ? (curPrice - h.entryPrice) * h.shares : null
-    const distToStop = curPrice != null ? (curPrice - h.stopPrice) / curPrice * 100 : null
-    return { ...h, curPrice, changePct, change, prevClose, source, pnlPct, pnlAmt, distToStop }
+    const q           = prices[h.symbol]
+    const curPrice    = q?.price      ?? null
+    const changePct   = q?.change_pct ?? null
+    const change      = q?.change     ?? null
+    const prevClose   = q?.prev_close ?? null
+    const source      = q?.source     ?? null   // 'twse_live' | 'twse_prev_close' | 'yfinance'
+    const pnlPct      = curPrice != null ? (curPrice - h.entryPrice) / h.entryPrice * 100 : null
+    const pnlAmt      = curPrice != null ? (curPrice - h.entryPrice) * h.shares : null
+    const distToStop  = curPrice != null ? (curPrice - h.stopPrice)  / curPrice * 100 : null
+    const distToTarget = (curPrice != null && h.targetPrice)
+      ? (h.targetPrice - curPrice) / curPrice * 100
+      : null
+    return { ...h, curPrice, changePct, change, prevClose, source, pnlPct, pnlAmt, distToStop, distToTarget }
   })
 
   const totalPnl  = rows.reduce((s, r) => s + (r.pnlAmt ?? 0), 0)
@@ -46,6 +51,20 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
 
   const fmt  = n => n >= 0 ? `+${n.toFixed(2)}%` : `${n.toFixed(2)}%`
   const fmtN = n => `${n >= 0 ? '+' : ''}NT$${Math.round(Math.abs(n)).toLocaleString()}`
+
+  function startEditTarget(r) {
+    setEditTarget(r.id)
+    setEditTargetVal(r.targetPrice ? String(r.targetPrice) : '')
+  }
+  function commitEditTarget(id) {
+    const val = parseFloat(editTargetVal)
+    if (!isNaN(val) && val > 0) {
+      onUpdate(id, { targetPrice: val, targetR: null })  // 手動設定時清除 R 標籤
+    } else if (editTargetVal === '') {
+      onUpdate(id, { targetPrice: null, targetR: null }) // 清空
+    }
+    setEditTarget(null)
+  }
 
   if (!holdings.length) {
     return (
@@ -96,6 +115,8 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
               <th>損益金額</th>
               <th>停損價</th>
               <th>距停損</th>
+              <th>止盈價</th>
+              <th>距止盈</th>
               <th></th>
             </tr>
           </thead>
@@ -155,6 +176,63 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
                           : `${r.distToStop.toFixed(1)}%`)
                       : '—'}
                   </td>
+
+                  {/* 止盈價（可點擊編輯）*/}
+                  <td style={{ color: '#26a69a', minWidth: 90 }}>
+                    {editTarget === r.id ? (
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input
+                          autoFocus
+                          type="number" step="0.5"
+                          value={editTargetVal}
+                          onChange={e => setEditTargetVal(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') commitEditTarget(r.id)
+                            if (e.key === 'Escape') setEditTarget(null)
+                          }}
+                          style={{
+                            width: 72, padding: '2px 5px',
+                            background: '#1e222d', color: '#26a69a',
+                            border: '1px solid #26a69a', borderRadius: 4,
+                            fontSize: 13,
+                          }}
+                        />
+                        <button onClick={() => commitEditTarget(r.id)}
+                          style={{ background:'#26a69a', color:'#fff', border:'none',
+                            borderRadius:4, padding:'2px 6px', cursor:'pointer', fontSize:12 }}>✓</button>
+                        <button onClick={() => setEditTarget(null)}
+                          style={{ background:'transparent', color:'#787b86', border:'none',
+                            cursor:'pointer', fontSize:13 }}>✕</button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => startEditTarget(r)}
+                        title="點擊編輯止盈價"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {r.targetPrice
+                          ? <>
+                              <div>${Number(r.targetPrice).toFixed(2)}</div>
+                              {r.targetR && <div style={{ fontSize: 11, color: '#787b86' }}>{r.targetR}R</div>}
+                            </>
+                          : <span style={{ color:'var(--text-3)', fontSize:12 }}>點擊設定</span>}
+                      </div>
+                    )}
+                  </td>
+
+                  {/* 距止盈 */}
+                  <td className={
+                    r.distToTarget == null ? '' :
+                    r.distToTarget <= 0   ? 'up' :          // 已達目標（漲過止盈）
+                    r.distToTarget < 5    ? 'hd-target-near' : '' // 接近目標
+                  }>
+                    {r.distToTarget != null
+                      ? (r.distToTarget <= 0
+                          ? <span style={{color:'#4caf50',fontWeight:700}}>🎯 已達目標</span>
+                          : `${r.distToTarget.toFixed(1)}%`)
+                      : '—'}
+                  </td>
+
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button className="hd-btn hd-chart"

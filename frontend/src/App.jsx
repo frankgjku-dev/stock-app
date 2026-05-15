@@ -174,6 +174,10 @@ export default function App() {
     setHoldings(prev => prev.filter(h => h.id !== id))
   }, [])
 
+  const updateHolding = useCallback((id, patch) => {
+    setHoldings(prev => prev.map(h => h.id === id ? { ...h, ...patch } : h))
+  }, [])
+
   /* ── journal 操作 ── */
   const addTrade    = useCallback((t) => setJournal(prev => [t, ...prev]), [])
   const updateTrade = useCallback((id, patch) => setJournal(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t)), [])
@@ -277,7 +281,7 @@ export default function App() {
         <Calculator onAddHolding={addHolding} onSwitchToHoldings={() => setTab('holdings')} />
       )}
       {tab === 'holdings' && (
-        <Holdings holdings={holdings} onRemove={removeHolding}
+        <Holdings holdings={holdings} onRemove={removeHolding} onUpdate={updateHolding}
           onSelectStock={(s) => { setSymbol(s); setTab('chart') }} />
       )}
       {tab === 'journal' && (
