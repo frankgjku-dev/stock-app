@@ -1119,8 +1119,29 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         return {"symbol": symbol, "candles": [], "error": str(e)}
 
 
+def _yf_quote(symbol: str):
+    """從 yfinance 取得報價（同步，供 executor 呼叫）"""
+    fi = yf.Ticker(to_yf(symbol)).fast_info
+    price = round(float(fi.last_price), 2)
+    prev  = round(float(fi.previous_close), 2)
+    return {
+        "symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
+        "price": price, "prev_close": prev,
+        "open":  round(float(fi.open), 2),
+        "high":  round(float(fi.day_high), 2),
+        "low":   round(float(fi.day_low), 2),
+        "volume": 0,
+        "change": round(price - prev, 2),
+        "change_pct": round((price - prev) / prev * 100, 2) if prev else 0,
+        "source": "yfinance",
+    }
+
 @app.get("/api/stocks/{symbol}/quote")
 async def get_quote(symbol: str):
+    twse_item = None
+    twse_market_name = None
+
+    # ── 1. 先嘗試 TWSE 即時 API ────────────────────────────
     for market in ("tse", "otc"):
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -1129,38 +1150,70 @@ async def get_quote(symbol: str):
                 resp = await client.get(url)
                 arr  = resp.json().get("msgArray", [])
                 if arr:
-                    item = arr[0]
-                    z, y = item.get("z", "-"), item.get("y", "0") or "0"
-                    prev  = float(y)
-                    price = float(z) if z and z != "-" else prev
-                    return {
-                        "symbol": symbol, "name": item.get("n", STOCK_LIST.get(symbol, symbol)),
-                        "price": price, "prev_close": prev,
-                        "open":  float(item.get("o", 0) or 0),
-                        "high":  float(item.get("h", 0) or 0),
-                        "low":   float(item.get("l", 0) or 0),
-                        "volume": int(float(item.get("v", 0) or 0)),
-                        "change": round(price - prev, 2),
-                        "change_pct": round((price - prev) / prev * 100, 2) if prev else 0,
-                    }
+                    twse_item = arr[0]
+                    twse_market_name = market
+                    break
         except Exception:
             continue
+
+    if twse_item:
+        item = twse_item
+        z = item.get("z", "-")
+        y = item.get("y", "0") or "0"
+        prev = float(y) if y and y != "-" else 0.0
+
+        # 有即時成交價 → 直接回傳
+        if z and z != "-":
+            price = float(z)
+            return {
+                "symbol": symbol, "name": item.get("n", STOCK_LIST.get(symbol, symbol)),
+                "price": price, "prev_close": prev,
+                "open":  float(item.get("o", 0) or 0),
+                "high":  float(item.get("h", 0) or 0),
+                "low":   float(item.get("l", 0) or 0),
+                "volume": int(float(item.get("v", 0) or 0)),
+                "change": round(price - prev, 2),
+                "change_pct": round((price - prev) / prev * 100, 2) if prev else 0,
+                "source": "twse_live",
+            }
+        # z="-"：市場收盤/尚未開盤 → 用 yfinance 取最新收盤價
+        # （yfinance last_price 在收盤後會更新為當日收盤價）
+        else:
+            try:
+                loop = asyncio.get_event_loop()
+                yf_data = await loop.run_in_executor(executor, _yf_quote, symbol)
+                # 若 yfinance 有更新的價格就用，否則退回 TWSE prev_close
+                yf_price = yf_data.get("price", 0)
+                if yf_price and yf_price != prev:
+                    return yf_data
+                # yfinance 與 TWSE prev_close 一樣 → 直接回傳 TWSE 資料
+                price = prev
+                return {
+                    "symbol": symbol, "name": item.get("n", STOCK_LIST.get(symbol, symbol)),
+                    "price": price, "prev_close": prev,
+                    "open":  float(item.get("o", 0) or 0),
+                    "high":  float(item.get("h", 0) or 0),
+                    "low":   float(item.get("l", 0) or 0),
+                    "volume": int(float(item.get("v", 0) or 0)),
+                    "change": 0.0, "change_pct": 0.0,
+                    "source": "twse_prev_close",
+                }
+            except Exception:
+                price = prev
+                return {
+                    "symbol": symbol, "name": item.get("n", STOCK_LIST.get(symbol, symbol)),
+                    "price": price, "prev_close": prev,
+                    "open":  0, "high": 0, "low": 0, "volume": 0,
+                    "change": 0.0, "change_pct": 0.0,
+                    "source": "twse_prev_close",
+                }
+
+    # ── 2. TWSE 失敗 → yfinance fallback ───────────────────
     try:
-        fi = yf.Ticker(to_yf(symbol)).fast_info
-        price = round(float(fi.last_price), 2)
-        prev  = round(float(fi.previous_close), 2)
-        return {
-            "symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
-            "price": price, "prev_close": prev,
-            "open":  round(float(fi.open), 2),
-            "high":  round(float(fi.day_high), 2),
-            "low":   round(float(fi.day_low), 2),
-            "volume": 0,
-            "change": round(price - prev, 2),
-            "change_pct": round((price - prev) / prev * 100, 2) if prev else 0,
-        }
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(executor, _yf_quote, symbol)
     except Exception as e:
-        return {"symbol": symbol, "error": str(e), "price": 0, "change": 0, "change_pct": 0}
+        return {"symbol": symbol, "error": str(e), "price": None, "change": 0, "change_pct": 0}
 
 
 # ── Screener ────────────────────────────────────────────

@@ -14,7 +14,7 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
       try {
         const r    = await fetch(`${API_BASE}/api/stocks/${h.symbol}/quote`)
         const data = await r.json()
-        if (data.price) results[h.symbol] = data
+        if (data.price != null && !data.error) results[h.symbol] = data
       } catch {}
     }))
     setPrices(results)
@@ -29,11 +29,15 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
 
   const rows = holdings.map(h => {
     const q          = prices[h.symbol]
-    const curPrice   = q?.price ?? null
+    const curPrice   = q?.price   ?? null
+    const changePct  = q?.change_pct ?? null
+    const change     = q?.change    ?? null
+    const prevClose  = q?.prev_close ?? null
+    const source     = q?.source    ?? null   // 'twse_live' | 'twse_prev_close' | 'yfinance'
     const pnlPct     = curPrice != null ? (curPrice - h.entryPrice) / h.entryPrice * 100 : null
     const pnlAmt     = curPrice != null ? (curPrice - h.entryPrice) * h.shares : null
     const distToStop = curPrice != null ? (curPrice - h.stopPrice) / curPrice * 100 : null
-    return { ...h, curPrice, pnlPct, pnlAmt, distToStop }
+    return { ...h, curPrice, changePct, change, prevClose, source, pnlPct, pnlAmt, distToStop }
   })
 
   const totalPnl  = rows.reduce((s, r) => s + (r.pnlAmt ?? 0), 0)
@@ -108,7 +112,29 @@ export default function Holdings({ holdings, onRemove, onSelectStock }) {
                   <td>${r.entryPrice.toFixed(1)}</td>
                   <td>{r.lots} 張</td>
                   <td className="hd-cur">
-                    {r.curPrice != null ? `$${r.curPrice}` : <span style={{color:'var(--text-3)'}}>—</span>}
+                    {r.curPrice != null ? (
+                      <div style={{ lineHeight: 1.4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>${Number(r.curPrice).toFixed(2)}</span>
+                          {r.source === 'twse_prev_close' && (
+                            <span style={{
+                              fontSize: 10, color: '#787b86',
+                              background: '#2a2e39', borderRadius: 3,
+                              padding: '1px 4px',
+                            }} title="市場收盤，顯示最近收盤價">收盤</span>
+                          )}
+                        </div>
+                        {r.changePct != null && r.changePct !== 0 && (
+                          <div style={{
+                            fontSize: 11,
+                            color: r.changePct >= 0 ? '#4caf50' : '#ef5350',
+                          }}>
+                            {r.changePct >= 0 ? '+' : ''}{Number(r.change).toFixed(2)}
+                            {' '}({r.changePct >= 0 ? '+' : ''}{Number(r.changePct).toFixed(2)}%)
+                          </div>
+                        )}
+                      </div>
+                    ) : <span style={{color:'var(--text-3)'}}>—</span>}
                   </td>
                   <td className={r.pnlPct != null ? (r.pnlPct >= 0 ? 'up' : 'down') : ''}>
                     {r.pnlPct != null ? fmt(r.pnlPct) : '—'}
