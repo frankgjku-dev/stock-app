@@ -56,6 +56,9 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     preview: null,
     selectedIdx: -1,
     hoverPt: null,
+    candleMap: new Map(),   // time → candle（Ctrl 吸附用）
+    ctrlHeld: false,
+    snapPt: null,           // { x, y, price, time } Ctrl 吸附點
     redraw: null,
   })
 
@@ -222,9 +225,22 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       const W = canvas.width / dpr, H = canvas.height / dpr
       ctx.clearRect(0, 0, W, H)
 
-      const { drawings, preview, selectedIdx } = S.current
+      const { drawings, preview, selectedIdx, snapPt } = S.current
       drawings.forEach((d, i) => paint(ctx, d, W, H, false, i === selectedIdx))
       if (preview) paint(ctx, preview, W, H, true, false)
+
+      // Ctrl 吸附指示圈
+      if (snapPt) {
+        ctx.save()
+        ctx.strokeStyle = '#b86e2a'
+        ctx.lineWidth   = 1.5
+        ctx.beginPath(); ctx.arc(snapPt.x, snapPt.y, 7, 0, Math.PI * 2); ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(snapPt.x - 13, snapPt.y); ctx.lineTo(snapPt.x + 13, snapPt.y)
+        ctx.moveTo(snapPt.x, snapPt.y - 13); ctx.lineTo(snapPt.x, snapPt.y + 13)
+        ctx.stroke()
+        ctx.restore()
+      }
     }
 
     S.current.redraw = redraw
@@ -272,8 +288,31 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     // crosshair 移動
     chart.subscribeCrosshairMove(param => {
       S.current.hoverPt = param.point || null
+
+      // ── Ctrl 吸附：找最近 K 棒的最高/最低點 ──
+      let snapPt = null
+      if (S.current.ctrlHeld && param.time && param.point) {
+        const candle = S.current.candleMap.get(param.time)
+        if (candle) {
+          const highY = cs.priceToCoordinate(candle.high)
+          const lowY  = cs.priceToCoordinate(candle.low)
+          if (highY != null && lowY != null) {
+            const snapPrice = param.point.y <= (highY + lowY) / 2 ? candle.high : candle.low
+            const snapY = cs.priceToCoordinate(snapPrice)
+            const snapX = chart.timeScale().timeToCoordinate(param.time)
+            if (snapY != null && snapX != null) {
+              snapPt = { x: snapX, y: snapY, price: snapPrice, time: param.time }
+            }
+          }
+        }
+      }
+      S.current.snapPt = snapPt
+
+      // preview 虛線終點：有吸附就用吸附座標
       if (param.point && S.current.preview) {
-        S.current.preview.cursor = param.point
+        S.current.preview.cursor = snapPt
+          ? { x: snapPt.x, y: snapPt.y }
+          : param.point
       }
       redraw()
     })
@@ -297,17 +336,26 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
 
       if (!param.point || !param.time) return
 
-      let price = cs.coordinateToPrice(param.point.y)
-      if (price == null) {
-        for (let step = 5; step <= 200; step += 5) {
-          price = cs.coordinateToPrice(Math.max(0, param.point.y - step))
-                  ?? cs.coordinateToPrice(param.point.y + step)
-          if (price != null) break
+      // ── 決定資料點（有 Ctrl 吸附就用吸附值）──
+      let dp
+      let cursorForPreview = param.point
+      if (S.current.ctrlHeld && S.current.snapPt) {
+        const sp = S.current.snapPt
+        dp = { time: sp.time, price: sp.price }
+        cursorForPreview = { x: sp.x, y: sp.y }
+      } else {
+        let price = cs.coordinateToPrice(param.point.y)
+        if (price == null) {
+          for (let step = 5; step <= 200; step += 5) {
+            price = cs.coordinateToPrice(Math.max(0, param.point.y - step))
+                    ?? cs.coordinateToPrice(param.point.y + step)
+            if (price != null) break
+          }
         }
+        if (price == null) return
+        dp = { time: param.time, price: Number(price) }
       }
-      if (price == null) return
 
-      const dp    = { time: param.time, price: Number(price) }
       const color = drawColorRef.current
       const oneClick = tool === 'horizontal' || tool === 'vertical'
 
@@ -315,7 +363,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
         if (oneClick) {
           S.current.drawings.push({ type: tool, pts: [dp], color })
         } else {
-          S.current.preview = { type: tool, pts: [dp], color, cursor: param.point }
+          S.current.preview = { type: tool, pts: [dp], color, cursor: cursorForPreview }
         }
       } else {
         const prev = S.current.preview
@@ -360,6 +408,8 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     })))
     MA_CONFIG.forEach(({ key, period }) => series[key]?.setData(calcMA(candles, period)))
     chart?.timeScale().fitContent()
+    // 建立 time → candle 的快速查表（Ctrl 吸附用）
+    S.current.candleMap = new Map(candles.map(c => [c.time, c]))
   }, [candles])
 
   /* ── MA 開關 ──────────────────────────────────── */
@@ -380,8 +430,25 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
 
   /* ── 鍵盤快捷鍵 ───────────────────────────────── */
   useEffect(() => {
-    function onKey(e) {
+    function onKeyDown(e) {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+      // 追蹤 Ctrl 按住狀態
+      if (e.key === 'Control') { S.current.ctrlHeld = true; return }
+
+      // Ctrl+Z 還原
+      if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault()
+        if (S.current.preview) {
+          // 第一點還沒確定時，取消 preview 即可
+          S.current.preview = null
+        } else if (S.current.drawings.length) {
+          S.current.drawings = S.current.drawings.slice(0, -1)
+        }
+        S.current.redraw?.()
+        return
+      }
+
       if (e.key === 'Escape') {
         S.current.preview = null; S.current.selectedIdx = -1; S.current.redraw?.()
       }
@@ -396,8 +463,21 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
         S.current.redraw?.()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+
+    function onKeyUp(e) {
+      if (e.key === 'Control') {
+        S.current.ctrlHeld = false
+        S.current.snapPt   = null
+        S.current.redraw?.()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup',   onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup',   onKeyUp)
+    }
   }, [])
 
   /* ── 畫線模式：停用拖曳平移 ───────────────────── */
