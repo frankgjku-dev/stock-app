@@ -388,7 +388,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         marginLeft:10, fontSize:11, padding:'2px 8px',
                         borderRadius:20, background:'var(--surface-3)',
                         color: vcp.buy_status === '放量突破' ? 'var(--down)' :
-                               vcp.buy_status === '等待突破' ? '#ffd700' :
+                               vcp.buy_status === '等待突破' ? '#e0a800' :
                                vcp.buy_status === '突破(量不足)' ? '#26c6da' : 'var(--text-3)',
                       }}>{vcp.buy_status}</span>
                     )}
@@ -411,7 +411,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                           <span style={{
                             marginLeft:6, fontSize:11,
                             color: vcp.dist_pivot <= 0 ? 'var(--down)' :
-                                   vcp.dist_pivot <= 3 ? '#ffd700' : 'var(--text-3)',
+                                   vcp.dist_pivot <= 3 ? '#e0a800' : 'var(--text-3)',
                           }}>
                             {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
                           </span>
@@ -754,7 +754,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                               <span style={{
                                 fontSize:10, marginLeft:4,
                                 color: vcp.dist_pivot <= 0 ? 'var(--down)' :
-                                       vcp.dist_pivot <= 3 ? '#ffd700' :
+                                       vcp.dist_pivot <= 3 ? '#e0a800' :
                                        vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
                               }}>
                                 {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
@@ -771,7 +771,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                               <div style={{
                                 fontSize:10,
                                 color: vcp.buy_status === '放量突破'     ? 'var(--down)' :
-                                       vcp.buy_status === '等待突破'     ? '#ffd700' :
+                                       vcp.buy_status === '等待突破'     ? '#e0a800' :
                                        vcp.buy_status === '突破(量不足)' ? '#26c6da' :
                                        vcp.buy_status === '過度延伸'     ? 'var(--text-3)' : 'var(--text-2)',
                               }}>{vcp.buy_status}</div>
