@@ -1,14 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
-
-const STORAGE_KEY = 'tw_trade_journal'
-
-function loadTrades() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') }
-  catch { return [] }
-}
-function saveTrades(t) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(t))
-}
+import { useState, useMemo } from 'react'
 
 const METHOD_INFO = [
   { label: '紀錄每筆進出場', desc: '進場價、停損價、出場價、理由' },
@@ -41,14 +31,11 @@ function F({ label, name, type = 'text', options, form, setForm, ...rest }) {
   )
 }
 
-export default function Journal() {
-  const [trades,   setTrades]   = useState(loadTrades)
+export default function Journal({ trades, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false)
   const [form,     setForm]     = useState(EMPTY_FORM)
   const [editId,   setEditId]   = useState(null)
   const [showMethod, setShowMethod] = useState(true)
-
-  useEffect(() => saveTrades(trades), [trades])
 
   // 連續虧損偵測
   const consecutiveLosses = useMemo(() => {
@@ -95,10 +82,10 @@ export default function Journal() {
       result: r == null ? 'open' : r > 0 ? 'win' : 'loss',
     }
     if (editId) {
-      setTrades(p => p.map(t => t.id === editId ? trade : t))
+      onUpdate(editId, trade)
       setEditId(null)
     } else {
-      setTrades(p => [trade, ...p])
+      onAdd(trade)
     }
     setForm(EMPTY_FORM); setShowForm(false)
   }
@@ -108,7 +95,7 @@ export default function Journal() {
   }
 
   function deleteTrade(id) {
-    if (confirm('確認刪除這筆交易？')) setTrades(p => p.filter(t => t.id !== id))
+    if (confirm('確認刪除這筆交易？')) onDelete(id)
   }
 
   const resultColor = r => r === 'win' ? '#4caf50' : r === 'loss' ? '#ef5350' : '#787b86'
