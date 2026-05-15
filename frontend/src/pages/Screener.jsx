@@ -59,9 +59,10 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   const [sortKey,   setSortKey]   = useState('rs_rating')
   const [sortAsc,   setSortAsc]   = useState(false)
   const [market,    setMarket]    = useState(null)
-  const [detail,      setDetail]      = useState(null)
-  const [showMethod,  setShowMethod]  = useState(false)
-  const [showPriority, setShowPriority] = useState(false)  // 預設收起，不擋表格
+  const [detail,       setDetail]       = useState(null)   // symbol of open drawer
+  const [detailData,   setDetailData]   = useState(null)   // full row data for drawer
+  const [showMethod,   setShowMethod]   = useState(false)
+  const [showPriority, setShowPriority] = useState(false)
   const pollRef = useRef(null)
 
   const allFavSymbols = (watchlist.groups || []).flatMap(g => g.stocks)
@@ -94,9 +95,18 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   useEffect(() => () => clearInterval(pollRef.current), [])
 
   async function handleScan() {
-    setResults([]); setDetail(null)
+    setResults([]); setDetail(null); setDetailData(null)
     await fetch(`${API_BASE}/api/screener/start`, { method:'POST' })
     setStatus('running'); startPoll()
+  }
+
+  function openDrawer(row) {
+    setDetail(row.symbol)
+    setDetailData(row)
+  }
+  function closeDrawer() {
+    setDetail(null)
+    setDetailData(null)
   }
 
   function handleSort(key) {
@@ -278,6 +288,216 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
           並自動生成進場建議（約需 1–3 分鐘）。
         </div>
       )}
+
+      {/* ── 詳情 Drawer ── */}
+      {detail && detailData && (() => {
+        const row = detailData
+        const vcp = row.vcp ?? {}
+        const rec = row.recommendation
+        const us  = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.none
+        return (
+          <>
+            {/* 遮罩 */}
+            <div
+              onClick={closeDrawer}
+              style={{
+                position:'fixed', inset:0, background:'rgba(0,0,0,0.45)',
+                zIndex:200, backdropFilter:'blur(2px)',
+              }}
+            />
+            {/* 側邊抽屜 */}
+            <div style={{
+              position:'fixed', top:0, right:0, bottom:0,
+              width: 'min(520px, 92vw)',
+              background:'var(--surface)', borderLeft:'1px solid var(--border-md)',
+              zIndex:201, overflowY:'auto', padding:'24px 22px',
+              boxShadow:'-6px 0 30px rgba(0,0,0,0.35)',
+              display:'flex', flexDirection:'column', gap:16,
+            }}>
+              {/* 頭部 */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:22, fontWeight:700, color:'var(--text-1)' }}>{row.symbol}</span>
+                    <span style={{ fontSize:15, color:'var(--text-2)' }}>{row.name}</span>
+                    <span className="rs-badge" style={{ background: rsColor(row.rs_rating) }}>{row.rs_rating}</span>
+                  </div>
+                  <div style={{ marginTop:4, fontSize:12, color:'var(--text-3)' }}>
+                    收盤 {row.close}　條件 {row.passed}/8　距高 {row.from_high}%　距MA50 +{row.from_ma50}%
+                  </div>
+                </div>
+                <button onClick={closeDrawer} style={{
+                  background:'var(--surface-2)', border:'1px solid var(--border)',
+                  borderRadius:8, padding:'4px 10px', cursor:'pointer',
+                  color:'var(--text-2)', fontSize:14, lineHeight:1,
+                }}>✕</button>
+              </div>
+
+              {/* 建議卡 */}
+              {rec && (
+                <div style={{
+                  borderRadius:10, padding:'14px 16px',
+                  background: us.bg, border:`1px solid ${us.border}`,
+                }}>
+                  <div style={{ fontWeight:700, color: us.text, marginBottom:6 }}>
+                    {rec.action_label}　<span style={{ fontWeight:400, fontSize:12 }}>{rec.setup_type}</span>
+                  </div>
+                  <div style={{ fontSize:12, color:'var(--text-2)', marginBottom:10, lineHeight:1.6 }}>
+                    {rec.reason}
+                  </div>
+                  {rec.entry && (
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 16px' }}>
+                      {[
+                        { k:'建議進場', v: rec.entry, c:'var(--text-1)', bold:true },
+                        { k:'停損',
+                          v: rec.stop
+                              ? `${rec.stop}（${((rec.entry - rec.stop)/rec.entry*100).toFixed(1)}%）`
+                              : '—',
+                          c:'var(--up)' },
+                        { k:'目標價', v: rec.target, c:'var(--down)' },
+                        { k:'損益比',
+                          v: rec.rr ? `1:${rec.rr} ${rec.rr >= 2 ? '✓' : '⚠️'}` : '—',
+                          c: rec.rr >= 2 ? 'var(--down)' : 'var(--warn)', bold:true },
+                      ].map(item => (
+                        <div key={item.k} style={{ fontSize:12 }}>
+                          <div style={{ color:'var(--text-3)', marginBottom:2 }}>{item.k}</div>
+                          <div style={{ color: item.c, fontWeight: item.bold ? 700 : 400, fontSize:14 }}>
+                            {item.v ?? '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* VCP 詳情 */}
+              {(vcp.score > 0 || vcp.pivot) && (
+                <div style={{ borderRadius:10, padding:'14px 16px', background:'var(--surface-2)', border:'1px solid var(--border)' }}>
+                  <div style={{ fontWeight:600, color:'var(--text-1)', marginBottom:10, fontSize:13 }}>
+                    VCP 分析
+                    {vcp.score100 != null && (
+                      <span style={{ marginLeft:8,
+                        color: vcp.score100 >= 85 ? 'var(--down)' : vcp.score100 >= 70 ? 'var(--warn)' : 'var(--text-2)',
+                        fontWeight:700 }}>
+                        {vcp.score100} 分
+                      </span>
+                    )}
+                    {vcp.buy_status && vcp.buy_status !== '—' && (
+                      <span style={{
+                        marginLeft:10, fontSize:11, padding:'2px 8px',
+                        borderRadius:20, background:'var(--surface-3)',
+                        color: vcp.buy_status === '放量突破' ? 'var(--down)' :
+                               vcp.buy_status === '等待突破' ? '#ffd700' :
+                               vcp.buy_status === '突破(量不足)' ? '#26c6da' : 'var(--text-3)',
+                      }}>{vcp.buy_status}</span>
+                    )}
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px 16px', fontSize:12 }}>
+                    {vcp.base_high > 0 && (
+                      <div>
+                        <div style={{ color:'var(--text-3)', marginBottom:2 }}>基準點</div>
+                        <div style={{ fontWeight:600, color:'var(--text-1)' }}>
+                          {vcp.base_high}
+                          {vcp.base_high_date && <span style={{ marginLeft:4, color:'var(--text-3)', fontWeight:400 }}>{vcp.base_high_date}</span>}
+                        </div>
+                      </div>
+                    )}
+                    {vcp.pivot > 0 && (
+                      <div>
+                        <div style={{ color:'var(--text-3)', marginBottom:2 }}>樞紐點（買點）</div>
+                        <div style={{ fontWeight:700, color:'var(--accent)' }}>
+                          {vcp.pivot}
+                          <span style={{
+                            marginLeft:6, fontSize:11,
+                            color: vcp.dist_pivot <= 0 ? 'var(--down)' :
+                                   vcp.dist_pivot <= 3 ? '#ffd700' : 'var(--text-3)',
+                          }}>
+                            {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
+                          </span>
+                          {vcp.pivot_date && <span style={{ marginLeft:4, color:'var(--text-3)', fontSize:10, fontWeight:400 }}>{vcp.pivot_date}</span>}
+                        </div>
+                      </div>
+                    )}
+                    {vcp.contractions >= 2 && (
+                      <div>
+                        <div style={{ color:'var(--text-3)', marginBottom:2 }}>收縮次數</div>
+                        <div>
+                          {vcp.contractions} 次
+                          {vcp.contraction_depths?.length
+                            ? <span style={{ color:'var(--text-3)', fontSize:11, marginLeft:4 }}>
+                                ({vcp.contraction_depths.map(d=>d+'%').join('→')})
+                              </span>
+                            : ''}
+                        </div>
+                      </div>
+                    )}
+                    {vcp.base_days > 0 && (
+                      <div>
+                        <div style={{ color:'var(--text-3)', marginBottom:2 }}>Base 長度</div>
+                        <div>{vcp.base_days} 天</div>
+                      </div>
+                    )}
+                    {vcp.atr_ratio != null && (
+                      <div>
+                        <div style={{ color:'var(--text-3)', marginBottom:2 }}>ATR 比值</div>
+                        <div>{vcp.atr_ratio}<span style={{ color:'var(--text-3)', fontSize:10, marginLeft:4 }}>({"<"}0.8=收縮)</span></div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:10 }}>
+                    {vcp.higher_lows    && <span className="pc-flag pc-flag-green">↑ 低點墊高</span>}
+                    {vcp.vol_contracting && <span className="pc-flag pc-flag-blue">📉 量縮</span>}
+                    {row.pocket_pivot   && <span className="pc-flag pc-flag-orange">🚀 Pocket Pivot</span>}
+                    {(vcp.details || []).map((d, i) =>
+                      <span key={i} className="pc-flag pc-flag-green">✓ {d}</span>)}
+                  </div>
+                </div>
+              )}
+
+              {/* Trend Template 8條件 */}
+              <div style={{ borderRadius:10, padding:'14px 16px', background:'var(--surface-2)', border:'1px solid var(--border)' }}>
+                <div style={{ fontWeight:600, color:'var(--text-1)', marginBottom:10, fontSize:13 }}>
+                  Trend Template（{row.passed}/8）
+                </div>
+                <div className="detail-grid">
+                  {CONDITIONS.map(k => (
+                    <div key={k} className={`cond-item ${row.conditions[k] ? 'pass' : 'fail'}`}>
+                      <span className="cond-icon">{row.conditions[k] ? '✓' : '✗'}</span>
+                      {COND_LABEL[k]}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 16px', marginTop:10, fontSize:12, color:'var(--text-3)' }}>
+                  <span>MA50: <strong style={{ color:'var(--text-2)' }}>{row.ma50}</strong></span>
+                  <span>MA150: <strong style={{ color:'var(--text-2)' }}>{row.ma150}</strong></span>
+                  <span>MA200: <strong style={{ color:'var(--text-2)' }}>{row.ma200}</strong></span>
+                  <span>52w高: <strong style={{ color:'var(--text-2)' }}>{row.high52}</strong></span>
+                  <span>52w低: <strong style={{ color:'var(--text-2)' }}>{row.low52}</strong></span>
+                </div>
+              </div>
+
+              {/* 底部操作 */}
+              <div style={{ display:'flex', gap:10 }}>
+                <button className="scan-btn" style={{ flex:1 }}
+                  onClick={() => { onSelectStock(row.symbol); closeDrawer() }}>
+                  📈 看K線圖
+                </button>
+                <button
+                  className={`star-btn ${allFavSymbols.includes(row.symbol) ? 'active' : ''}`}
+                  style={{ padding:'8px 16px', fontSize:14 }}
+                  onClick={() => {
+                    const g = watchlist.groups[0]
+                    if (g) onToggleInGroup(row.symbol, g.id)
+                  }}
+                >
+                  {allFavSymbols.includes(row.symbol) ? '★ 已加自選' : '☆ 加入自選'}
+                </button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
 
       {/* ── 篩選後空白提示 ── */}
       {results.length > 0 && filtered.length === 0 && (
@@ -509,54 +729,20 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                             </span>
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>
-                      {/* 基準點 + 樞紐點 + 買點狀態 */}
-                      <td style={{ fontSize:11, lineHeight:1.55 }}>
+                      {/* 樞紐點（精簡單行）*/}
+                      <td style={{ fontSize:12, whiteSpace:'nowrap' }}>
                         {vcp.pivot ? (
-                          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-
-                            {/* 基準點（VCP 起始高點） */}
-                            {vcp.base_high > 0 && (
-                              <div>
-                                <span style={{ fontSize:10, color:'var(--text-3)' }}>基準點　</span>
-                                <span style={{ fontWeight:600, color:'var(--text-1)' }}>{vcp.base_high}</span>
-                                {vcp.base_high_date && (
-                                  <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:4 }}>
-                                    {vcp.base_high_date}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* 樞紐點（最後收縮高點 = 買入觸發） */}
-                            <div>
-                              <span style={{ fontSize:10, color:'var(--text-3)' }}>樞紐點　</span>
-                              <span style={{ fontWeight:700, color:'var(--accent)' }}>{vcp.pivot}</span>
-                              <span style={{
-                                fontSize:10, marginLeft:4,
-                                color: vcp.dist_pivot <= 0 ? 'var(--down)' :
-                                       vcp.dist_pivot <= 3 ? '#ffd700' :
-                                       vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
-                              }}>
-                                {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
-                              </span>
-                              {vcp.pivot_date && (
-                                <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:4 }}>
-                                  {vcp.pivot_date}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* 買點狀態 */}
-                            {vcp.buy_status && vcp.buy_status !== '—' && (
-                              <div style={{
-                                fontSize:10,
-                                color: vcp.buy_status === '放量突破'     ? 'var(--down)' :
-                                       vcp.buy_status === '等待突破'     ? '#ffd700' :
-                                       vcp.buy_status === '突破(量不足)' ? '#26c6da' :
-                                       vcp.buy_status === '過度延伸'     ? 'var(--text-3)' : 'var(--text-2)',
-                              }}>{vcp.buy_status}</div>
-                            )}
-                          </div>
+                          <span>
+                            <span style={{ fontWeight:700, color:'var(--accent)' }}>{vcp.pivot}</span>
+                            <span style={{
+                              fontSize:10, marginLeft:5,
+                              color: vcp.dist_pivot <= 0 ? 'var(--down)' :
+                                     vcp.dist_pivot <= 3 ? '#ffd700' :
+                                     vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
+                            }}>
+                              {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
+                            </span>
+                          </span>
                         ) : '—'}
                       </td>
                       <td>
@@ -590,7 +776,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
 
                       <td>
                         <button className="detail-btn"
-                          onClick={() => setDetail(detail === row.symbol ? null : row.symbol)}>
+                          onClick={() => detail === row.symbol ? closeDrawer() : openDrawer(row)}>
                           {detail === row.symbol ? '收起' : '展開'}
                         </button>
                       </td>
@@ -601,101 +787,6 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                       </td>
                     </tr>
 
-                    {/* ── 展開詳情 ── */}
-                    {detail === row.symbol && (
-                      <tr className="detail-row">
-                        <td colSpan={14}>
-                          <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
-
-                            {/* 選股建議卡 */}
-                            {rec && (
-                              <div className="rec-detail-card"
-                                style={{ borderColor: us.border, background: us.bg }}>
-                                <div className="rec-detail-title" style={{ color: us.text }}>
-                                  {rec.action_label} · {rec.setup_type}
-                                </div>
-                                <div className="rec-detail-reason">{rec.reason}</div>
-                                {rec.entry && (
-                                  <div className="rec-detail-levels">
-                                    <div className="rdl-item">
-                                      <span className="rdl-k">建議進場</span>
-                                      <span className="rdl-v" style={{ color:'var(--text-1)', fontWeight:700 }}>{rec.entry}</span>
-                                    </div>
-                                    <div className="rdl-item">
-                                      <span className="rdl-k">停損</span>
-                                      <span className="rdl-v" style={{ color:'var(--up)' }}>{rec.stop}
-                                        {rec.entry && rec.stop
-                                          ? ` (${((rec.entry-rec.stop)/rec.entry*100).toFixed(1)}%)`
-                                          : ''}</span>
-                                    </div>
-                                    <div className="rdl-item">
-                                      <span className="rdl-k">目標</span>
-                                      <span className="rdl-v" style={{ color:'var(--down)' }}>{rec.target}</span>
-                                    </div>
-                                    {rec.rr && (
-                                      <div className="rdl-item">
-                                        <span className="rdl-k">損益比</span>
-                                        <span className="rdl-v" style={{ color: rec.rr >= 2 ? 'var(--down)' : 'var(--warn)', fontWeight:700 }}>
-                                          1:{rec.rr} {rec.rr >= 2 ? '✓' : '⚠️'}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Trend Template 條件 */}
-                            <div className="detail-grid" style={{ flex:1 }}>
-                              {CONDITIONS.map(k => (
-                                <div key={k} className={`cond-item ${row.conditions[k] ? 'pass' : 'fail'}`}>
-                                  <span className="cond-icon">{row.conditions[k] ? '✓' : '✗'}</span>
-                                  {COND_LABEL[k]}
-                                </div>
-                              ))}
-                              <div className="cond-item info">MA50: {row.ma50}</div>
-                              <div className="cond-item info">MA150: {row.ma150}</div>
-                              <div className="cond-item info">MA200: {row.ma200}</div>
-                              <div className="cond-item info">52w高: {row.high52}</div>
-                              <div className="cond-item info">52w低: {row.low52}</div>
-                              {(vcp.score > 0 || vcp.score100 > 0) && (
-                                <div className="vcp-detail-block">
-                                  <div className="vcp-detail-title">
-                                    VCP 分析
-                                    {vcp.score100 != null &&
-                                      <span style={{ marginLeft:8, fontWeight:700,
-                                        color: vcp.score100 >= 85 ? 'var(--down)'
-                                             : vcp.score100 >= 70 ? 'var(--warn)' : 'var(--text-2)' }}>
-                                        {vcp.score100} 分
-                                        {vcp.score100 >= 85 ? '（高品質）'
-                                         : vcp.score100 >= 70 ? '（良好）' : ''}
-                                      </span>}
-                                  </div>
-                                  <div className="vcp-detail-items">
-                                    {(vcp.details || []).map((d, i) =>
-                                      <div key={i} className="cond-item pass">✓ {d}</div>)}
-                                    {vcp.atr_ratio != null &&
-                                      <div className="cond-item info">ATR比值: {vcp.atr_ratio}（&lt;0.8=收縮）</div>}
-                                    <div className="cond-item info">樞紐點: {vcp.pivot}（距 {vcp.dist_pivot}%）</div>
-                                    {vcp.base_days > 0 &&
-                                      <div className="cond-item info">Base 長度: {vcp.base_days} 天（規格 15–65）</div>}
-                                    {vcp.higher_lows &&
-                                      <div className="cond-item pass">↑ 低點墊高（Higher Lows）</div>}
-                                    {vcp.buy_status && vcp.buy_status !== '—' &&
-                                      <div className="cond-item info">買點狀態: {vcp.buy_status}</div>}
-                                  </div>
-                                </div>
-                              )}
-                              {row.pocket_pivot && (
-                                <div className="cond-item pass" style={{ width:'100%' }}>
-                                  🚀 Pocket Pivot：今日紅K量超過過去10日所有黑K最大量
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                   </React.Fragment>
                 )
               })}
