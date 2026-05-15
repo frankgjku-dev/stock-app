@@ -63,6 +63,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   const [detailData,   setDetailData]   = useState(null)   // full row data for drawer
   const [showMethod,   setShowMethod]   = useState(false)
   const [showPriority, setShowPriority] = useState(false)
+  const [tableExpanded, setTableExpanded] = useState(true) // 預設展開
   const pollRef = useRef(null)
 
   const allFavSymbols = (watchlist.groups || []).flatMap(g => g.stocks)
@@ -659,6 +660,21 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
       {/* ── 結果表格 ── */}
       {filtered.length > 0 && (
         <div className="table-wrap">
+          {/* 標題列 */}
+          <div className="table-section-header">
+            <span className="table-section-title">📋 篩選結果</span>
+            <span className="table-section-count">{filtered.length} 檔</span>
+            <button
+              className="table-section-toggle"
+              onClick={() => setTableExpanded(p => !p)}
+            >
+              {tableExpanded ? '▲ 收起' : '▼ 展開'}
+            </button>
+          </div>
+
+          {/* 可滾動表格容器 */}
+          {tableExpanded && (
+          <div className="table-scroll-body">
           <table className="screener-table">
             <thead>
               <tr>
@@ -826,7 +842,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
               })}
             </tbody>
           </table>
-        </div>
+          </div>  {/* table-scroll-body */}
+          )}
+        </div>  {/* table-wrap */}
       )}
     </div>
   )
