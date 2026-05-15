@@ -33,158 +33,41 @@ function calcMA(candles, period) {
   return out
 }
 
+function lighten(hex) {
+  try {
+    const n = parseInt(hex.slice(1), 16)
+    const r = Math.min(255, ((n>>16)&255) + 60)
+    const g = Math.min(255, ((n>>8) &255) + 60)
+    const b = Math.min(255,  (n     &255) + 60)
+    return `rgb(${r},${g},${b})`
+  } catch { return hex }
+}
+
 export default function Chart({ candles, indicators, activeTool, drawColor = '#b86e2a', clearRef }) {
-  const containerRef = useRef(null)  // 給 lightweight-charts
-  const canvasRef    = useRef(null)  // 我們的繪圖層
+  const containerRef  = useRef(null)
+  const activeToolRef = useRef(activeTool)
+  const drawColorRef  = useRef(drawColor)
+  activeToolRef.current = activeTool
+  drawColorRef.current  = drawColor
 
   const S = useRef({
     chart: null, series: {},
-    drawings: [],   // [{ type, pts, color }]
-    preview: null,  // { type, pts, color, cursor:{x,y} }
+    drawings: [],
+    preview: null,
     selectedIdx: -1,
-    cursorPt: { x:0, y:0 },
+    hoverPt: null,
+    redraw: null,
   })
 
+  /* ── toPixel / hitTest：只用到 S，可放在元件層級 ── */
   function toPixel(price, time) {
     const { chart, series } = S.current
     if (!chart || !series.candle) return null
     const x = chart.timeScale().timeToCoordinate(time)
     const y = series.candle.priceToCoordinate(price)
-    // Allow null x (bar scrolled out of view) — caller handles it
     return (x != null && y != null) ? { x, y } : null
   }
 
-  /* ── canvas resize ────────────────────────────── */
-  const dpr = window.devicePixelRatio || 1
-
-  function syncCanvas() {
-    const el = canvasRef.current
-    const ct = containerRef.current
-    if (!el || !ct) return
-    el.width  = ct.clientWidth  * dpr
-    el.height = ct.clientHeight * dpr
-    el.style.width  = ct.clientWidth  + 'px'
-    el.style.height = ct.clientHeight + 'px'
-    // Scale all canvas operations to match DPR
-    el.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0)
-  }
-
-  /* ── 渲染所有繪圖 ─────────────────────────────── */
-  function redraw() {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    // Clear using CSS pixel dimensions (transform is already applied by syncCanvas)
-    const W = canvas.width / dpr, H = canvas.height / dpr
-    ctx.clearRect(0, 0, W, H)
-    const { drawings, preview, selectedIdx } = S.current
-    drawings.forEach((d, i) => paint(ctx, d, W, H, false, i === selectedIdx))
-    if (preview) paint(ctx, preview, W, H, true, false)
-  }
-
-  function paint(ctx, d, W, H, isPreview, selected) {
-    const { type, pts, color = '#b86e2a' } = d
-    if (!pts[0]) return
-    const p1 = toPixel(pts[0].price, pts[0].time)
-    if (!p1) return
-    const strokeColor = selected ? lighten(color) : color
-
-    ctx.save()
-    ctx.strokeStyle = strokeColor
-    ctx.fillStyle   = strokeColor
-    ctx.lineWidth   = selected ? 2.5 : 1.5
-    ctx.setLineDash(isPreview ? [6, 4] : [])
-    ctx.font = '11px Inter, system-ui, sans-serif'
-
-    const p2 = pts[1]
-      ? toPixel(pts[1].price, pts[1].time)
-      : d.cursor ?? S.current.cursorPt
-
-    switch (type) {
-      case 'horizontal': {
-        ctx.beginPath(); ctx.moveTo(0, p1.y); ctx.lineTo(W, p1.y); ctx.stroke()
-        ctx.setLineDash([])
-        const lbl = pts[0].price.toFixed(2)
-        const tw  = ctx.measureText(lbl).width + 10
-        ctx.fillStyle = 'rgba(250,245,236,0.90)'
-        ctx.fillRect(W - tw - 4, p1.y - 12, tw, 17)
-        ctx.fillStyle = strokeColor
-        ctx.fillText(lbl, W - tw, p1.y + 2)
-        break
-      }
-      case 'vertical': {
-        ctx.beginPath(); ctx.moveTo(p1.x, 0); ctx.lineTo(p1.x, H); ctx.stroke()
-        break
-      }
-      case 'segment':
-      case 'trendline':
-      case 'ray': {
-        if (!p2) break
-        ctx.beginPath()
-        if (!isPreview && pts[1]) {
-          const dx = p2.x - p1.x, dy = p2.y - p1.y, sc = 8000
-          if (type === 'trendline') {
-            ctx.moveTo(p1.x - dx*sc, p1.y - dy*sc)
-            ctx.lineTo(p2.x + dx*sc, p2.y + dy*sc)
-          } else if (type === 'ray') {
-            ctx.moveTo(p1.x, p1.y)
-            ctx.lineTo(p2.x + dx*sc, p2.y + dy*sc)
-          } else {
-            // segment：僅連接兩端點，不延伸
-            ctx.moveTo(p1.x, p1.y)
-            ctx.lineTo(p2.x, p2.y)
-          }
-        } else {
-          ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y)
-        }
-        ctx.stroke(); ctx.setLineDash([])
-        const anchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
-        anchors.forEach(pt => {
-          ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI*2)
-          ctx.fillStyle = strokeColor; ctx.fill()
-          ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
-        })
-        break
-      }
-      case 'rectangle': {
-        if (!p2) break
-        const alpha = selected ? '22' : '11'
-        ctx.fillStyle = color + alpha
-        ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
-        ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
-        break
-      }
-      case 'fibonacci': {
-        if (!p2) break
-        const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x)
-        const span = pts[1] ? pts[1].price - pts[0].price : null
-        FIB_LEVELS.forEach(({ r, label, color: fc }) => {
-          const y = p1.y + (p2.y - p1.y) * r
-          ctx.strokeStyle = fc; ctx.fillStyle = fc; ctx.lineWidth = 1.2
-          ctx.beginPath(); ctx.moveTo(minX, y); ctx.lineTo(maxX, y); ctx.stroke()
-          ctx.font = '10px Inter, system-ui'
-          ctx.fillText(label, maxX + 5, y + 4)
-          if (span != null)
-            ctx.fillText((pts[0].price + span * r).toFixed(2), minX - 54, y + 4)
-        })
-        break
-      }
-    }
-    ctx.restore()
-  }
-
-  function lighten(hex) {
-    // slightly brighten selected color
-    try {
-      const n = parseInt(hex.slice(1), 16)
-      const r = Math.min(255, ((n>>16)&255) + 60)
-      const g = Math.min(255, ((n>>8) &255) + 60)
-      const b = Math.min(255,  (n     &255) + 60)
-      return `rgb(${r},${g},${b})`
-    } catch { return hex }
-  }
-
-  /* ── hit test ────────────────────────────────── */
   function hitTest(d, mx, my) {
     const { type, pts } = d
     if (!pts[0]) return false
@@ -207,11 +90,146 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     return Math.hypot(mx-p1.x-t*dx, my-p1.y-t*dy) < T
   }
 
-  /* ── chart init ───────────────────────────────── */
+  /* ── 圖表初始化 ───────────────────────────────────── */
   useEffect(() => {
     const ct = containerRef.current
     if (!ct) return
 
+    const dpr = window.devicePixelRatio || 1
+
+    // ── canvas 掛到 body，用 position:fixed 精確覆蓋圖表 ──
+    const canvas = document.createElement('canvas')
+    canvas.style.cssText = [
+      'position:fixed',
+      'top:0', 'left:0', 'width:0', 'height:0',
+      'pointer-events:none',
+      'z-index:9998',
+    ].join(';')
+    document.body.appendChild(canvas)
+
+    // ── syncCanvas：根據圖表容器的螢幕位置更新 canvas ──
+    function syncCanvas() {
+      const rect = ct.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return
+      canvas.style.left   = rect.left   + 'px'
+      canvas.style.top    = rect.top    + 'px'
+      canvas.style.width  = rect.width  + 'px'
+      canvas.style.height = rect.height + 'px'
+      if (canvas.width  !== Math.round(rect.width  * dpr) ||
+          canvas.height !== Math.round(rect.height * dpr)) {
+        canvas.width  = Math.round(rect.width  * dpr)
+        canvas.height = Math.round(rect.height * dpr)
+        canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0)
+      }
+    }
+
+    // ── paint 單一繪圖 ──────────────────────────────
+    function paint(ctx, d, W, H, isPreview, selected) {
+      const { type, pts, color = '#b86e2a' } = d
+      if (!pts[0]) return
+      const p1 = toPixel(pts[0].price, pts[0].time)
+      if (!p1) return
+      const strokeColor = selected ? lighten(color) : color
+
+      ctx.save()
+      ctx.strokeStyle = strokeColor
+      ctx.fillStyle   = strokeColor
+      ctx.lineWidth   = selected ? 2.5 : 1.5
+      ctx.setLineDash(isPreview ? [6, 4] : [])
+      ctx.font = '11px Inter, system-ui, sans-serif'
+
+      const p2 = pts[1]
+        ? toPixel(pts[1].price, pts[1].time)
+        : (d.cursor ?? null)
+
+      switch (type) {
+        case 'horizontal': {
+          ctx.beginPath(); ctx.moveTo(0, p1.y); ctx.lineTo(W, p1.y); ctx.stroke()
+          ctx.setLineDash([])
+          const lbl = pts[0].price.toFixed(2)
+          const tw  = ctx.measureText(lbl).width + 10
+          ctx.fillStyle = 'rgba(250,245,236,0.90)'
+          ctx.fillRect(W - tw - 4, p1.y - 12, tw, 17)
+          ctx.fillStyle = strokeColor
+          ctx.fillText(lbl, W - tw, p1.y + 2)
+          break
+        }
+        case 'vertical': {
+          ctx.beginPath(); ctx.moveTo(p1.x, 0); ctx.lineTo(p1.x, H); ctx.stroke()
+          break
+        }
+        case 'segment':
+        case 'trendline':
+        case 'ray': {
+          if (!p2) break
+          ctx.beginPath()
+          if (!isPreview && pts[1]) {
+            const dx = p2.x - p1.x, dy = p2.y - p1.y, sc = 8000
+            if (type === 'trendline') {
+              ctx.moveTo(p1.x - dx*sc, p1.y - dy*sc)
+              ctx.lineTo(p2.x + dx*sc, p2.y + dy*sc)
+            } else if (type === 'ray') {
+              ctx.moveTo(p1.x, p1.y)
+              ctx.lineTo(p2.x + dx*sc, p2.y + dy*sc)
+            } else {
+              ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y)
+            }
+          } else {
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y)
+          }
+          ctx.stroke(); ctx.setLineDash([])
+          const anchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
+          anchors.forEach(pt => {
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI*2)
+            ctx.fillStyle = strokeColor; ctx.fill()
+            ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
+          })
+          break
+        }
+        case 'rectangle': {
+          if (!p2) break
+          ctx.fillStyle = color + (selected ? '22' : '11')
+          ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+          ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+          break
+        }
+        case 'fibonacci': {
+          if (!p2) break
+          const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x)
+          const span = pts[1] ? pts[1].price - pts[0].price : null
+          FIB_LEVELS.forEach(({ r, label, color: fc }) => {
+            const y = p1.y + (p2.y - p1.y) * r
+            ctx.strokeStyle = fc; ctx.fillStyle = fc; ctx.lineWidth = 1.2
+            ctx.beginPath(); ctx.moveTo(minX, y); ctx.lineTo(maxX, y); ctx.stroke()
+            ctx.font = '10px Inter, system-ui'
+            ctx.fillText(label, maxX + 5, y + 4)
+            if (span != null)
+              ctx.fillText((pts[0].price + span * r).toFixed(2), minX - 54, y + 4)
+          })
+          break
+        }
+      }
+      ctx.restore()
+    }
+
+    // ── redraw：清除並重繪所有圖層 ─────────────────
+    function redraw() {
+      if (canvas.width === 0 || canvas.height === 0) {
+        syncCanvas()
+        if (canvas.width === 0 || canvas.height === 0) return
+      }
+      const ctx = canvas.getContext('2d')
+      const W = canvas.width / dpr, H = canvas.height / dpr
+      ctx.clearRect(0, 0, W, H)
+
+      const { drawings, preview, selectedIdx } = S.current
+      drawings.forEach((d, i) => paint(ctx, d, W, H, false, i === selectedIdx))
+      if (preview) paint(ctx, preview, W, H, true, false)
+    }
+
+    S.current.redraw = redraw
+
+    // ── 建立圖表 ────────────────────────────────────
     const chart = createChart(ct, {
       width:  ct.clientWidth,
       height: ct.clientHeight,
@@ -234,7 +252,6 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       upColor:CANDLE_UP, downColor:CANDLE_DOWN,
       borderVisible:false, wickUpColor:CANDLE_UP, wickDownColor:CANDLE_DOWN,
     })
-    // 讓 K 線只佔上方 76%，留空間給成交量
     cs.priceScale().applyOptions({ scaleMargins:{ top:0.05, bottom:0.24 } })
     S.current.series.candle = cs
 
@@ -249,28 +266,28 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       })
     })
 
-    // 圖表平移/縮放時重繪覆蓋層
+    // 圖表滾動/縮放 → 重繪覆蓋層
     chart.timeScale().subscribeVisibleLogicalRangeChange(redraw)
 
-    // ── crosshair 移動：更新 preview 預覽線位置 ──
+    // crosshair 移動
     chart.subscribeCrosshairMove(param => {
+      S.current.hoverPt = param.point || null
       if (param.point && S.current.preview) {
         S.current.preview.cursor = param.point
       }
       redraw()
     })
 
-    // ── 圖表原生 click：用於畫線（不需自己換算座標）──
+    // 點擊 → 畫線
     chart.subscribeClick(param => {
       const tool = activeToolRef.current
+
       if (tool === 'cursor') {
-        // cursor 模式：選取繪圖
         if (param.point) {
           const { x, y } = param.point
-          const { drawings } = S.current
           let hit = -1
-          for (let i = drawings.length - 1; i >= 0; i--) {
-            if (hitTest(drawings[i], x, y)) { hit = i; break }
+          for (let i = S.current.drawings.length - 1; i >= 0; i--) {
+            if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
           }
           S.current.selectedIdx = hit
           redraw()
@@ -280,10 +297,8 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
 
       if (!param.point || !param.time) return
 
-      // 取得點擊位置的價格
       let price = cs.coordinateToPrice(param.point.y)
       if (price == null) {
-        // 掃描附近找有效價格
         for (let step = 5; step <= 200; step += 5) {
           price = cs.coordinateToPrice(Math.max(0, param.point.y - step))
                   ?? cs.coordinateToPrice(param.point.y + step)
@@ -292,7 +307,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       }
       if (price == null) return
 
-      const dp = { time: param.time, price: Number(price) }
+      const dp    = { time: param.time, price: Number(price) }
       const color = drawColorRef.current
       const oneClick = tool === 'horizontal' || tool === 'vertical'
 
@@ -311,6 +326,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     })
 
     syncCanvas()
+    redraw()
 
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width:ct.clientWidth, height:ct.clientHeight })
@@ -318,7 +334,19 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     })
     ro.observe(ct)
 
-    return () => { ro.disconnect(); chart.remove(); S.current.chart=null; S.current.series={} }
+    // 視窗滾動也要更新 canvas 位置
+    const onScroll = () => { syncCanvas(); redraw() }
+    window.addEventListener('scroll', onScroll, true)
+
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('scroll', onScroll, true)
+      chart.remove()
+      document.body.removeChild(canvas)
+      S.current.chart = null
+      S.current.series = {}
+      S.current.redraw = null
+    }
   }, [])
 
   /* ── 資料 ─────────────────────────────────────── */
@@ -342,40 +370,37 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     )
   }, [indicators])
 
-  /* ── 清除全部（給外部呼叫）─────────────────────── */
+  /* ── 清除全部 ─────────────────────────────────── */
   useEffect(() => {
     if (clearRef) clearRef.current = () => {
-      S.current.drawings=[]; S.current.preview=null; S.current.selectedIdx=-1; redraw()
+      S.current.drawings = []; S.current.preview = null; S.current.selectedIdx = -1
+      S.current.redraw?.()
     }
   }, [clearRef])
 
   /* ── 鍵盤快捷鍵 ───────────────────────────────── */
   useEffect(() => {
     function onKey(e) {
-      if (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA') return
-      if (e.key==='Escape') { S.current.preview=null; S.current.selectedIdx=-1; redraw() }
-      if (e.key==='Delete' || e.key==='Backspace') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.key === 'Escape') {
+        S.current.preview = null; S.current.selectedIdx = -1; S.current.redraw?.()
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
         const { selectedIdx, drawings } = S.current
-        if (selectedIdx>=0) {
-          S.current.drawings = drawings.filter((_,i)=>i!==selectedIdx)
+        if (selectedIdx >= 0) {
+          S.current.drawings = drawings.filter((_, i) => i !== selectedIdx)
           S.current.selectedIdx = -1
         } else if (drawings.length) {
-          S.current.drawings = drawings.slice(0,-1)
+          S.current.drawings = drawings.slice(0, -1)
         }
-        redraw()
+        S.current.redraw?.()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  /* ── activeToolRef / drawColorRef ────────────── */
-  const activeToolRef = useRef(activeTool)
-  const drawColorRef  = useRef(drawColor)
-  activeToolRef.current = activeTool
-  drawColorRef.current  = drawColor
-
-  /* ── 畫線模式：停用拖曳平移，游標改為十字 ────── */
+  /* ── 畫線模式：停用拖曳平移 ───────────────────── */
   useEffect(() => {
     const { chart } = S.current
     if (!chart) return
@@ -384,27 +409,12 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       handleScroll: { pressedMouseMove: !drawing, mouseWheel: true, horzTouchDrag: !drawing },
       handleScale:  { mouseWheel: true, pinch: true, axisPressedMouseMove: !drawing },
     })
-    // 更新容器滑鼠樣式
     if (containerRef.current) {
       containerRef.current.style.cursor = drawing ? 'crosshair' : 'default'
     }
   }, [activeTool])
 
   return (
-    <div style={{ position:'relative', width:'100%', height:'100%' }}>
-
-      {/* lightweight-charts 掌控的圖表容器（原生 click 事件在這裡觸發） */}
-      <div ref={containerRef} style={{ width:'100%', height:'100%' }} />
-
-      {/* 繪圖畫布：不攔截事件，只負責渲染繪圖 */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position:'absolute', top:0, left:0,
-          width:'100%', height:'100%',
-          pointerEvents:'none',
-        }}
-      />
-    </div>
+    <div ref={containerRef} style={{ width:'100%', height:'100%' }} />
   )
 }
