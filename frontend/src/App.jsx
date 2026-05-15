@@ -51,8 +51,19 @@ export default function App() {
   const [watchlist, setWatchlist] = useState(() => ls('tw_watchlist', DEFAULT_WATCHLIST))
   const [holdings,  setHoldings]  = useState(() => ls('tw_holdings',  []))
   const [journal,   setJournal]   = useState(() => ls('tw_journal',   []))
+  const [drawings,  setDrawings]  = useState(() => ls('tw_drawings',  {}))
 
   const chartClearRef = useRef(null)
+
+  // 用 ref 讓 scheduleSync 永遠拿到最新值
+  const watchlistRef = useRef(watchlist)
+  const holdingsRef  = useRef(holdings)
+  const journalRef   = useRef(journal)
+  const drawingsRef  = useRef(drawings)
+  watchlistRef.current = watchlist
+  holdingsRef.current  = holdings
+  journalRef.current   = journal
+  drawingsRef.current  = drawings
 
   /* ══════════════════════════════════════════════════
      雲端同步工具函式
@@ -60,23 +71,27 @@ export default function App() {
   async function loadFromCloud(uid) {
     const { data, error } = await supabase
       .from('user_data')
-      .select('watchlist, holdings, journal')
+      .select('watchlist, holdings, journal, drawings')
       .eq('id', uid)
       .single()
     if (error || !data) return
     if (data.watchlist) { setWatchlist(data.watchlist); localStorage.setItem('tw_watchlist', JSON.stringify(data.watchlist)) }
     if (data.holdings)  { setHoldings(data.holdings);   localStorage.setItem('tw_holdings',  JSON.stringify(data.holdings)) }
     if (data.journal)   { setJournal(data.journal);     localStorage.setItem('tw_journal',   JSON.stringify(data.journal)) }
+    if (data.drawings)  { setDrawings(data.drawings);   localStorage.setItem('tw_drawings',  JSON.stringify(data.drawings)) }
   }
 
-  function scheduleSync(patch) {
+  function scheduleSync() {
     clearTimeout(syncTimer.current)
     syncTimer.current = setTimeout(async () => {
       if (!user) return
       setSyncing(true)
       await supabase.from('user_data').upsert({
         id: user.id,
-        ...patch,
+        watchlist: watchlistRef.current,
+        holdings:  holdingsRef.current,
+        journal:   journalRef.current,
+        drawings:  drawingsRef.current,
         updated_at: new Date().toISOString(),
       })
       setSyncing(false)
@@ -97,20 +112,10 @@ export default function App() {
   }, [])
 
   /* ── 自動同步到 localStorage + 雲端 ── */
-  useEffect(() => {
-    localStorage.setItem('tw_watchlist', JSON.stringify(watchlist))
-    if (user) scheduleSync({ watchlist, holdings, journal })
-  }, [watchlist])
-
-  useEffect(() => {
-    localStorage.setItem('tw_holdings', JSON.stringify(holdings))
-    if (user) scheduleSync({ watchlist, holdings, journal })
-  }, [holdings])
-
-  useEffect(() => {
-    localStorage.setItem('tw_journal', JSON.stringify(journal))
-    if (user) scheduleSync({ watchlist, holdings, journal })
-  }, [journal])
+  useEffect(() => { localStorage.setItem('tw_watchlist', JSON.stringify(watchlist)); if (user) scheduleSync() }, [watchlist])
+  useEffect(() => { localStorage.setItem('tw_holdings',  JSON.stringify(holdings));  if (user) scheduleSync() }, [holdings])
+  useEffect(() => { localStorage.setItem('tw_journal',   JSON.stringify(journal));   if (user) scheduleSync() }, [journal])
+  useEffect(() => { localStorage.setItem('tw_drawings',  JSON.stringify(drawings));  if (user) scheduleSync() }, [drawings])
 
   /* ── 登出 ── */
   async function handleLogout() {
@@ -173,6 +178,12 @@ export default function App() {
   const addTrade    = useCallback((t) => setJournal(prev => [t, ...prev]), [])
   const updateTrade = useCallback((id, patch) => setJournal(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t)), [])
   const deleteTrade = useCallback((id) => setJournal(prev => prev.filter(t => t.id !== id)), [])
+
+  /* ── drawings 操作 ── */
+  const drawingsKey = `${symbol}_${interval}`
+  const handleDrawingsChange = useCallback((arr) => {
+    setDrawings(prev => ({ ...prev, [drawingsKey]: arr }))
+  }, [drawingsKey])
 
   /* ════════════════════════════════════════════════ */
   return (
@@ -241,6 +252,9 @@ export default function App() {
               <Chart
                 candles={candles} indicators={indicators}
                 activeTool={activeTool} drawColor={drawColor} clearRef={chartClearRef}
+                drawingsKey={drawingsKey}
+                savedDrawings={drawings[drawingsKey]}
+                onDrawingsChange={handleDrawingsChange}
               />
             </div>
           </div>

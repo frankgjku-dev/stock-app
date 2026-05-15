@@ -71,6 +71,11 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
       .then(r => r.json()).then(d => !d.error && setMarket(d)).catch(() => {})
     fetch(`${API_BASE}/api/screener/universe`)
       .then(r => r.json()).then(d => setUniverse(d)).catch(() => {})
+    // 載入上次掃描結果
+    try {
+      const cached = JSON.parse(localStorage.getItem('tw_screener_results') || 'null')
+      if (cached?.length) setResults(cached)
+    } catch {}
   }, [])
 
   function startPoll() {
@@ -80,7 +85,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
       setStatus(d.status); setProgress(d.progress); setTotal(d.total)
       if (d.status === 'done' || d.status === 'error') {
         clearInterval(pollRef.current)
-        setResults(d.results || [])
+        const res = d.results || []
+        setResults(res)
+        try { localStorage.setItem('tw_screener_results', JSON.stringify(res)) } catch {}
       }
     }, 1500)
   }

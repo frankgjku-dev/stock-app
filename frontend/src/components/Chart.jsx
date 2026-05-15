@@ -43,12 +43,17 @@ function lighten(hex) {
   } catch { return hex }
 }
 
-export default function Chart({ candles, indicators, activeTool, drawColor = '#b86e2a', clearRef }) {
-  const containerRef  = useRef(null)
-  const activeToolRef = useRef(activeTool)
-  const drawColorRef  = useRef(drawColor)
-  activeToolRef.current = activeTool
-  drawColorRef.current  = drawColor
+export default function Chart({
+  candles, indicators, activeTool, drawColor = '#b86e2a', clearRef,
+  drawingsKey, savedDrawings, onDrawingsChange,
+}) {
+  const containerRef        = useRef(null)
+  const activeToolRef       = useRef(activeTool)
+  const drawColorRef        = useRef(drawColor)
+  const onDrawingsChangeRef = useRef(onDrawingsChange)
+  activeToolRef.current       = activeTool
+  drawColorRef.current        = drawColor
+  onDrawingsChangeRef.current = onDrawingsChange
 
   const S = useRef({
     chart: null, series: {},
@@ -362,6 +367,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       if (!S.current.preview) {
         if (oneClick) {
           S.current.drawings.push({ type: tool, pts: [dp], color })
+          onDrawingsChangeRef.current?.(S.current.drawings)
         } else {
           S.current.preview = { type: tool, pts: [dp], color, cursor: cursorForPreview }
         }
@@ -369,6 +375,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
         const prev = S.current.preview
         S.current.drawings.push({ type: prev.type, pts: [...prev.pts, dp], color: prev.color })
         S.current.preview = null
+        onDrawingsChangeRef.current?.(S.current.drawings)
       }
       redraw()
     })
@@ -425,8 +432,18 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
     if (clearRef) clearRef.current = () => {
       S.current.drawings = []; S.current.preview = null; S.current.selectedIdx = -1
       S.current.redraw?.()
+      onDrawingsChangeRef.current?.([])
     }
   }, [clearRef])
+
+  /* ── 股票/週期切換：載入對應的已儲存畫線 ────── */
+  useEffect(() => {
+    S.current.drawings    = savedDrawings?.length ? [...savedDrawings] : []
+    S.current.preview     = null
+    S.current.selectedIdx = -1
+    S.current.snapPt      = null
+    S.current.redraw?.()
+  }, [drawingsKey])
 
   /* ── 鍵盤快捷鍵 ───────────────────────────────── */
   useEffect(() => {
@@ -440,10 +457,10 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
       if (e.ctrlKey && e.key === 'z') {
         e.preventDefault()
         if (S.current.preview) {
-          // 第一點還沒確定時，取消 preview 即可
           S.current.preview = null
         } else if (S.current.drawings.length) {
           S.current.drawings = S.current.drawings.slice(0, -1)
+          onDrawingsChangeRef.current?.(S.current.drawings)
         }
         S.current.redraw?.()
         return
@@ -461,6 +478,7 @@ export default function Chart({ candles, indicators, activeTool, drawColor = '#b
           S.current.drawings = drawings.slice(0, -1)
         }
         S.current.redraw?.()
+        onDrawingsChangeRef.current?.(S.current.drawings)
       }
     }
 
