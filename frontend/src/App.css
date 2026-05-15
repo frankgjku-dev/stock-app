@@ -372,21 +372,21 @@ body {
 ═══════════════════════════════════════════════════════ */
 .screener-page {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 24px 28px;
-  display: flex; flex-direction: column; gap: 18px;
+  padding: 12px 20px;
+  display: flex; flex-direction: column; gap: 10px;
 }
 
 .market-board {
   display: flex; align-items: center;
-  gap: 20px; flex-wrap: wrap;
+  gap: 14px; flex-wrap: wrap;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 14px 22px;
+  padding: 8px 16px;
   box-shadow: var(--shadow-sm);
 }
 .board-title { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .6px; white-space: nowrap; }
-.board-val   { font-size: 22px; font-weight: 700; }
+.board-val   { font-size: 16px; font-weight: 700; }
 .board-item  { font-size: 12px; color: var(--text-2); }
 .board-badge {
   font-size: 11px; font-weight: 700;
@@ -474,7 +474,7 @@ body {
   z-index: 4;
   background: var(--surface);
   color: var(--text-3);
-  padding: 10px 14px; text-align: left;
+  padding: 7px 10px; text-align: left;
   border-bottom: 2px solid var(--border-md);
   white-space: nowrap;
   font-size: 11px; text-transform: uppercase;
@@ -484,9 +484,10 @@ body {
 .screener-table th.sortable { cursor: pointer; user-select: none; transition: color var(--trans); }
 .screener-table th.sortable:hover { color: var(--text-1); }
 .screener-table td {
-  padding: 10px 14px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   color: var(--text-2);
+  white-space: nowrap;
 }
 .screener-table tbody tr:last-child td { border-bottom: none; }
 .data-row { transition: background var(--trans); }
