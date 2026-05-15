@@ -729,20 +729,54 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                             </span>
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>
-                      {/* 樞紐點（精簡單行）*/}
-                      <td style={{ fontSize:12, whiteSpace:'nowrap' }}>
+                      {/* 基準點 + 樞紐點 + 買點狀態 */}
+                      <td className="td-pivot" style={{ fontSize:11, lineHeight:1.55 }}>
                         {vcp.pivot ? (
-                          <span>
-                            <span style={{ fontWeight:700, color:'var(--accent)' }}>{vcp.pivot}</span>
-                            <span style={{
-                              fontSize:10, marginLeft:5,
-                              color: vcp.dist_pivot <= 0 ? 'var(--down)' :
-                                     vcp.dist_pivot <= 3 ? '#ffd700' :
-                                     vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
-                            }}>
-                              {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
-                            </span>
-                          </span>
+                          <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+
+                            {/* 基準點 */}
+                            {vcp.base_high > 0 && (
+                              <div>
+                                <span style={{ fontSize:10, color:'var(--text-3)' }}>基準點　</span>
+                                <span style={{ fontWeight:600, color:'var(--text-1)' }}>{vcp.base_high}</span>
+                                {vcp.base_high_date && (
+                                  <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:4 }}>
+                                    {vcp.base_high_date}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* 樞紐點 */}
+                            <div>
+                              <span style={{ fontSize:10, color:'var(--text-3)' }}>樞紐點　</span>
+                              <span style={{ fontWeight:700, color:'var(--accent)' }}>{vcp.pivot}</span>
+                              <span style={{
+                                fontSize:10, marginLeft:4,
+                                color: vcp.dist_pivot <= 0 ? 'var(--down)' :
+                                       vcp.dist_pivot <= 3 ? '#ffd700' :
+                                       vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
+                              }}>
+                                {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
+                              </span>
+                              {vcp.pivot_date && (
+                                <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:4 }}>
+                                  {vcp.pivot_date}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 買點狀態 */}
+                            {vcp.buy_status && vcp.buy_status !== '—' && (
+                              <div style={{
+                                fontSize:10,
+                                color: vcp.buy_status === '放量突破'     ? 'var(--down)' :
+                                       vcp.buy_status === '等待突破'     ? '#ffd700' :
+                                       vcp.buy_status === '突破(量不足)' ? '#26c6da' :
+                                       vcp.buy_status === '過度延伸'     ? 'var(--text-3)' : 'var(--text-2)',
+                              }}>{vcp.buy_status}</div>
+                            )}
+                          </div>
                         ) : '—'}
                       </td>
                       <td>

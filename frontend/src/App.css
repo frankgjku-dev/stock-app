@@ -488,6 +488,11 @@ body {
   border-bottom: 1px solid var(--border);
   color: var(--text-2);
   white-space: nowrap;
+  vertical-align: middle;
+}
+/* 樞紐/買點欄允許多行 */
+.screener-table td.td-pivot {
+  white-space: normal;
 }
 .screener-table tbody tr:last-child td { border-bottom: none; }
 .data-row { transition: background var(--trans); }
