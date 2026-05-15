@@ -467,30 +467,28 @@ body {
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
-/* 結果表格區塊標題列 */
+/* 結果表格區塊標題列（與高優先候選同風格）*/
 .table-section-header {
   display: flex; align-items: center; gap: 10px;
-  padding: 12px 18px;
+  padding: 16px 18px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface);
   border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
 .table-section-title {
-  font-size: 14px; font-weight: 600; color: var(--text-1);
+  font-size: 15px; font-weight: 700; color: var(--text-1);
 }
 .table-section-count {
-  font-size: 12px; font-weight: 700;
   background: var(--accent-dim); color: var(--accent);
-  border-radius: 20px; padding: 2px 10px;
+  font-size: 12px; padding: 2px 10px; border-radius: 20px;
 }
 .table-section-toggle {
   margin-left: auto;
-  background: none; border: 1px solid var(--border-md);
-  border-radius: var(--r-sm); padding: 3px 12px;
-  font-size: 12px; color: var(--text-2); cursor: pointer;
-  transition: background var(--trans);
+  background: none; border: none;
+  font-size: 12px; color: var(--text-3); cursor: pointer;
+  transition: color var(--trans);
 }
-.table-section-toggle:hover { background: var(--surface-3); }
+.table-section-toggle:hover { color: var(--text-1); }
 
 /* 可滾動的表格主體容器 */
 .table-scroll-body {

@@ -664,6 +664,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
           <div className="table-section-header">
             <span className="table-section-title">📋 篩選結果</span>
             <span className="table-section-count">{filtered.length} 檔</span>
+            <span className="priority-sub">— 符合 Minervini SEPA 條件</span>
             <button
               className="table-section-toggle"
               onClick={() => setTableExpanded(p => !p)}
