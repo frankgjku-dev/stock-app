@@ -1255,6 +1255,197 @@ async def ws_quote(ws: WebSocket, symbol: str):
 
 
 # ══════════════════════════════════════════════════════════
+#  市場情報（新聞爬蟲 + 主題偵測）
+# ══════════════════════════════════════════════════════════
+import xml.etree.ElementTree as ET
+import re
+from collections import Counter
+
+# 題材關鍵字表
+INTEL_THEMES = {
+    'AI / 人工智慧': ['AI', '人工智慧', 'ChatGPT', 'GPT', 'Nvidia', '輝達', '大語言模型', 'LLM', '生成式'],
+    '半導體 / 晶片': ['半導體', '晶片', 'TSMC', 'CoWoS', '先進封裝', 'HBM', '晶圓', 'EUV'],
+    '電動車 / 電池': ['電動車', 'EV', 'Tesla', '特斯拉', '比亞迪', '電池', '充電樁'],
+    '機器人':        ['機器人', 'humanoid', '人形機器人', '自動化', 'Boston Dynamics'],
+    '伺服器 / 雲端': ['伺服器', '雲端', 'AWS', 'Azure', '資料中心', 'GB200', 'H100', 'B200'],
+    '航運':          ['航運', '長榮', '陽明', '運價', '貨櫃', '散裝'],
+    '金融 / 貨幣':   ['利率', '升息', '降息', 'Fed', '央行', '聯準會', '貨幣政策'],
+    '地緣政治':      ['關稅', '制裁', '美中', '台海', '貿易戰', '出口管制'],
+    '網通 / 5G':     ['5G', '6G', '網通', '光纖', '基地台', 'Wi-Fi'],
+    '綠能 / 儲能':   ['太陽能', '風電', '綠能', '再生能源', '儲能', '離岸風'],
+    '蘋果供應鏈':    ['蘋果', 'Apple', 'iPhone', 'Mac', 'Vision Pro', '供應鏈'],
+    '黃仁勳 / NVIDIA': ['黃仁勳', 'Jensen Huang', 'GTC', 'Computex', 'NVIDIA', 'GeForce'],
+}
+
+# 情報快取
+intel_cache: dict = {
+    "status":        "idle",
+    "themes":        [],
+    "articles":      [],
+    "stock_mentions":[],
+    "movers":        [],
+    "last_updated":  None,
+    "article_count": 0,
+    "error":         None,
+}
+
+# ── 工具函式 ─────────────────────────────────────────────
+
+async def _fetch_rss(url: str) -> list[dict]:
+    """抓 RSS XML 並解析成 [{title, link, source, pub}]"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            root = ET.fromstring(resp.text)
+            items = []
+            for item in root.findall(".//item"):
+                title = (item.findtext("title") or "").strip()
+                link  = (item.findtext("link")  or "").strip()
+                pub   = (item.findtext("pubDate") or "").strip()
+                src_el = item.find("source")
+                source = src_el.text.strip() if src_el is not None and src_el.text else ""
+                if title:
+                    items.append({"title": title, "link": link, "source": source, "pub": pub})
+            return items
+    except Exception:
+        return []
+
+async def _fetch_cnyes() -> list[dict]:
+    """鉅亨網台股新聞"""
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                "https://api.cnyes.com/media/api/v1/newslist/category/tw_stock?limit=30",
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            data = resp.json()
+            items = []
+            for it in data.get("items", {}).get("data", []):
+                items.append({
+                    "title":  it.get("title", ""),
+                    "link":   f"https://news.cnyes.com/news/id/{it.get('newsId','')}",
+                    "source": "鉅亨網",
+                    "pub":    "",
+                })
+            return items
+    except Exception:
+        return []
+
+def _detect_themes(articles: list[dict]) -> list[dict]:
+    counts: Counter = Counter()
+    theme_arts: dict = {t: [] for t in INTEL_THEMES}
+    for art in articles:
+        text = art["title"]
+        for theme, kws in INTEL_THEMES.items():
+            if any(kw.lower() in text.lower() for kw in kws):
+                counts[theme] += 1
+                if len(theme_arts[theme]) < 4:
+                    theme_arts[theme].append(art)
+    return [
+        {"theme": t, "count": c, "articles": theme_arts[t]}
+        for t, c in counts.most_common()
+    ]
+
+def _detect_stock_mentions(articles: list[dict]) -> list[dict]:
+    universe = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+    counts: Counter = Counter()
+    arts_map: dict  = {}
+    for art in articles:
+        text = art["title"]
+        for sym, name in universe.items():
+            if name in text or (len(sym) == 4 and sym in text):
+                counts[sym] += 1
+                arts_map.setdefault(sym, [])
+                if len(arts_map[sym]) < 3:
+                    arts_map[sym].append(art["title"])
+    return [
+        {"symbol": sym, "name": (STOCK_UNIVERSE or STOCK_LIST).get(sym, sym),
+         "count": c, "headlines": arts_map.get(sym, [])}
+        for sym, c in counts.most_common(15)
+    ]
+
+def _get_movers_sync() -> list[dict]:
+    """用 yfinance 取今日漲跌幅最大的股票"""
+    symbols = list(STOCK_LIST.keys())
+    tickers = [to_yf(s) for s in symbols]
+    try:
+        raw = yf.download(tickers, period="2d", progress=False, threads=True)
+        result = []
+        closes = raw.get("Close", raw) if isinstance(raw.columns, pd.MultiIndex) else raw
+        for sym, tk in zip(symbols, tickers):
+            try:
+                prices = closes[tk].dropna() if tk in closes.columns else pd.Series()
+                if len(prices) >= 2:
+                    today = float(prices.iloc[-1])
+                    prev  = float(prices.iloc[-2])
+                    pct   = round((today - prev) / prev * 100, 2)
+                    result.append({
+                        "symbol": sym, "name": STOCK_LIST[sym],
+                        "price": round(today, 2), "change_pct": pct,
+                    })
+            except Exception:
+                pass
+        result.sort(key=lambda x: abs(x["change_pct"]), reverse=True)
+        return result[:12]
+    except Exception:
+        return []
+
+async def _run_intel_scan():
+    global intel_cache
+    intel_cache["status"] = "running"
+    intel_cache["error"]  = None
+    try:
+        # 抓新聞
+        queries = ["台股 股市 今日", "台灣股票 暴漲 題材", "台股 概念股 受惠"]
+        tasks   = [_fetch_rss(
+            f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        ) for q in queries]
+        tasks.append(_fetch_cnyes())
+        results = await asyncio.gather(*tasks)
+        all_arts = [a for lst in results for a in lst]
+
+        # 去重
+        seen, unique = set(), []
+        for a in all_arts:
+            if a["title"] not in seen:
+                seen.add(a["title"])
+                unique.append(a)
+
+        # 分析
+        themes  = _detect_themes(unique)
+        mentions = _detect_stock_mentions(unique)
+
+        # 今日漲跌榜（背景執行緒）
+        loop = asyncio.get_event_loop()
+        movers = await loop.run_in_executor(executor, _get_movers_sync)
+
+        intel_cache.update({
+            "status":        "done",
+            "themes":        themes,
+            "articles":      unique[:60],
+            "stock_mentions": mentions,
+            "movers":        movers,
+            "last_updated":  datetime.now(TAIWAN_TZ).strftime("%Y-%m-%d %H:%M"),
+            "article_count": len(unique),
+            "error":         None,
+        })
+    except Exception as e:
+        intel_cache["status"] = "error"
+        intel_cache["error"]  = str(e)
+
+@app.post("/api/market-intel/scan")
+async def start_intel_scan(background_tasks: BackgroundTasks):
+    if intel_cache["status"] == "running":
+        return {"status": "already_running"}
+    background_tasks.add_task(_run_intel_scan)
+    return {"status": "started"}
+
+@app.get("/api/market-intel/status")
+async def intel_status():
+    return intel_cache
+
+
+# ══════════════════════════════════════════════════════════
 #  回測 API
 # ══════════════════════════════════════════════════════════
 @app.get("/api/stocks/{symbol}/backtest")

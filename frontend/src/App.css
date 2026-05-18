@@ -368,6 +368,142 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════
+   MARKET INTEL PAGE
+═══════════════════════════════════════════════════════ */
+.intel-page {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 24px 28px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.intel-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+}
+.intel-title { font-size: 20px; font-weight: 700; color: var(--text-1); margin-bottom: 4px; }
+.intel-sub   { font-size: 12px; color: var(--text-3); }
+
+/* Tab 列 */
+.intel-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.intel-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 16px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 13px; color: var(--text-2); cursor: pointer;
+  transition: all var(--trans);
+}
+.intel-tab:hover  { background: var(--surface-2); }
+.intel-tab.active { background: var(--accent-dim); color: var(--accent);
+  border-color: var(--accent-glow); font-weight: 600; }
+.intel-tab-n {
+  font-size: 11px; font-weight: 700;
+  background: var(--surface-3); color: var(--text-3);
+  border-radius: 20px; padding: 1px 7px;
+}
+.intel-tab.active .intel-tab-n {
+  background: var(--accent-glow); color: var(--accent);
+}
+
+/* 區塊通用 */
+.intel-section { display: flex; flex-direction: column; gap: 12px; }
+.intel-section-title {
+  font-size: 14px; font-weight: 600; color: var(--text-1);
+}
+
+/* ── 熱門題材 ── */
+.intel-themes-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;
+}
+.intel-theme-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 14px 16px;
+}
+.itc-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.itc-badge {
+  font-size: 11px; font-weight: 700;
+  border: 1px solid; border-radius: 20px; padding: 2px 8px;
+}
+.itc-name  { font-size: 14px; font-weight: 600; color: var(--text-1); flex: 1; }
+.itc-count { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.itc-articles { display: flex; flex-direction: column; gap: 4px; }
+.itc-article-link {
+  font-size: 11px; color: var(--text-2); text-decoration: none;
+  line-height: 1.5; display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: color var(--trans);
+}
+.itc-article-link:hover { color: var(--accent); }
+
+/* ── 新聞提及股票 ── */
+.intel-mentions-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;
+}
+.intel-mention-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 12px 14px;
+}
+.imc-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.imc-rank { font-size: 11px; color: var(--text-3); min-width: 24px; }
+.imc-sym  {
+  font-size: 15px; font-weight: 700; color: var(--accent);
+  cursor: pointer; transition: opacity var(--trans);
+}
+.imc-sym:hover { opacity: 0.75; }
+.imc-name  { font-size: 12px; color: var(--text-2); flex: 1; }
+.imc-count {
+  font-size: 12px; font-weight: 700; color: var(--text-1);
+  background: var(--accent-dim); border-radius: 20px; padding: 1px 8px;
+}
+.imc-headlines { display: flex; flex-direction: column; gap: 3px; }
+.imc-headline  {
+  font-size: 11px; color: var(--text-3); line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── 今日異動 ── */
+.intel-movers-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;
+}
+.intel-mover-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 12px 14px;
+  cursor: pointer; transition: transform var(--trans), box-shadow var(--trans);
+}
+.intel-mover-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.mover-up   { border-color: rgba(196,90,74,0.3); }
+.mover-down { border-color: rgba(74,148,96,0.3); }
+.imv-sym   { font-size: 16px; font-weight: 700; color: var(--text-1); }
+.imv-name  { font-size: 11px; color: var(--text-3); margin: 2px 0 6px; }
+.imv-price { font-size: 13px; color: var(--text-2); margin-bottom: 2px; }
+.imv-chg   { font-size: 18px; font-weight: 700; }
+.imv-news-tag {
+  margin-top: 6px; font-size: 10px; color: var(--accent);
+  background: var(--accent-dim); border-radius: 4px; padding: 2px 6px;
+  display: inline-block;
+}
+
+/* ── 新聞列表 ── */
+.intel-news-list {
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+.intel-news-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px; text-decoration: none;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--trans);
+}
+.intel-news-item:last-child { border-bottom: none; }
+.intel-news-item:hover { background: var(--surface-2); }
+.ini-title  { font-size: 13px; color: var(--text-1); flex: 1; line-height: 1.5; }
+.ini-source { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+/* ═══════════════════════════════════════════════════════
    SCREENER PAGE
 ═══════════════════════════════════════════════════════ */
 .screener-page {

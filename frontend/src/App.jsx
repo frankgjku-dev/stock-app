@@ -10,12 +10,14 @@ import Calculator       from './pages/Calculator'
 import Journal          from './pages/Journal'
 import Backtest         from './pages/Backtest'
 import Holdings         from './pages/Holdings'
+import MarketIntel      from './pages/MarketIntel'
 import useStockData     from './hooks/useStockData'
 import { supabase }     from './lib/supabase'
 
 const TABS = [
   { id: 'chart',      label: 'K線分析' },
   { id: 'screener',   label: '選股 (Minervini)' },
+  { id: 'intel',      label: '📡 市場情報' },
   { id: 'backtest',   label: '回測' },
   { id: 'calculator', label: '部位計算機' },
   { id: 'holdings',   label: '📊 持倉' },
@@ -275,6 +277,9 @@ export default function App() {
           onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
           watchlist={watchlist} onToggleInGroup={toggleInGroup}
         />
+      )}
+      {tab === 'intel'      && (
+        <MarketIntel onSelectStock={(s) => { setSymbol(s); setTab('chart') }} />
       )}
       {tab === 'backtest'   && <Backtest symbol={symbol} />}
       {tab === 'calculator' && (
