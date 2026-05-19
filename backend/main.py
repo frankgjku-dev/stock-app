@@ -1362,19 +1362,13 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         loop = asyncio.get_event_loop()
 
         # ══ 取資料（每層失敗才往下，盡量少打 API）══════════════════
-        # 1) stooq.com — 單一請求，最快，全球可達
-        candles = await loop.run_in_executor(executor, _stooq_sync, symbol, period)
+        # 1) Yahoo Finance Chart API 直連（2 次請求，最快且可靠）
+        candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
 
-        # 2) Yahoo Finance Chart API 直連（2 次請求）
-        if not candles:
-            candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
-
-        # 3) 日線才用 TWSE / TPEX（各 13 次請求，較慢）
+        # 2) 日線才用 TWSE（政府站台，穩定，但較慢）
         if not candles and not is_intraday and interval == "1d":
             months = _PERIOD_MONTHS.get(period, 13)
             candles = await loop.run_in_executor(executor, _twse_sync, symbol, months)
-            if not candles:
-                candles = await loop.run_in_executor(executor, _tpex_sync, symbol, months)
 
         # ── 最後：yfinance 套件 ────────────────────────────────────
         if not candles:
@@ -1886,14 +1880,10 @@ async def analyze_stock(symbol: str):
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 1. 取資料：stooq → Yahoo Chart → TWSE → TPEX ─────────
-        raw: list = await loop.run_in_executor(executor, _stooq_sync, symbol, "1y")
-        if not raw:
-            raw = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
+        # ── 1. 取資料：Yahoo Chart → TWSE ─────────────────────────
+        raw: list = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
         if not raw:
             raw = await loop.run_in_executor(executor, _twse_sync, symbol, 14)
-        if not raw:
-            raw = await loop.run_in_executor(executor, _tpex_sync, symbol, 14)
         if len(raw) < 60:
             return {"error": "資料不足，請確認股票代碼是否正確"}
 
@@ -1978,9 +1968,7 @@ async def analyze_stock(symbol: str):
         # ── 8. RS vs 0050 ───────────────────────────────────────────
         rs_score = None
         try:
-            bc_raw = await loop.run_in_executor(executor, _stooq_sync, "0050", "1y")
-            if not bc_raw:
-                bc_raw = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
+            bc_raw = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
             if not bc_raw:
                 bc_raw = await loop.run_in_executor(executor, _twse_sync, "0050", 14)
             if len(bc_raw) >= 20:
