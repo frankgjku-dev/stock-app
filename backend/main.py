@@ -1277,6 +1277,22 @@ INTEL_THEMES = {
     '黃仁勳 / NVIDIA': ['黃仁勳', 'Jensen Huang', 'GTC', 'Computex', 'NVIDIA', 'GeForce'],
 }
 
+# 題材 → 相關台股（顯示於推薦個股）
+THEME_STOCKS = {
+    'AI / 人工智慧':    ['2330', '2454', '2382', '6669', '3711', '3017'],
+    '半導體 / 晶片':   ['2330', '2303', '6488', '3711', '2454', '3034', '8299'],
+    '電動車 / 電池':   ['2308', '1301', '2002', '3231', '2317'],
+    '機器人':           ['2308', '2382', '2317', '2395', '6669'],
+    '伺服器 / 雲端':   ['2382', '6669', '3231', '2356', '4938', '6230', '3017'],
+    '航運':             ['2603', '2618', '2610'],
+    '金融 / 貨幣':     ['2881', '2882', '2886', '2884', '2891', '2885', '2892'],
+    '地緣政治':         ['2330', '2303', '2454', '2382', '6669'],
+    '網通 / 5G':       ['2345', '6452', '2379', '4904', '3045', '2412'],
+    '綠能 / 儲能':     ['2308', '1101', '6505', '1303', '1326'],
+    '蘋果供應鏈':       ['2317', '4938', '3008', '2357', '2301', '2324'],
+    '黃仁勳 / NVIDIA': ['2330', '2382', '6669', '3017', '6230', '3231'],
+}
+
 intel_cache: dict = {
     "status": "idle", "themes": [], "articles": [],
     "stock_mentions": [], "movers": [],
@@ -1321,6 +1337,10 @@ async def _fetch_cnyes() -> list:
 def _detect_themes(articles: list) -> list:
     counts: Counter = Counter()
     theme_arts: dict = {t: [] for t in INTEL_THEMES}
+    # 同時統計題材內提到的股票（動態補充）
+    theme_mentioned: dict = {t: Counter() for t in INTEL_THEMES}
+    universe = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+
     for art in articles:
         text = art["title"]
         for theme, kws in INTEL_THEMES.items():
@@ -1328,7 +1348,21 @@ def _detect_themes(articles: list) -> list:
                 counts[theme] += 1
                 if len(theme_arts[theme]) < 4:
                     theme_arts[theme].append(art)
-    return [{"theme": t, "count": c, "articles": theme_arts[t]} for t, c in counts.most_common()]
+                # 記錄這篇文章提到哪些股票
+                for sym, name in universe.items():
+                    if name in text or (len(sym) == 4 and sym in text):
+                        theme_mentioned[theme][sym] += 1
+
+    result = []
+    for t, c in counts.most_common():
+        # 推薦個股：先放新聞動態提到的，再補靜態清單，最多 8 檔
+        dynamic  = [s for s, _ in theme_mentioned[t].most_common(4)]
+        static   = [s for s in THEME_STOCKS.get(t, []) if s not in dynamic]
+        rec_syms = (dynamic + static)[:8]
+        stocks   = [{"symbol": s, "name": universe.get(s, STOCK_LIST.get(s, s))}
+                    for s in rec_syms if s in universe or s in STOCK_LIST]
+        result.append({"theme": t, "count": c, "articles": theme_arts[t], "stocks": stocks})
+    return result
 
 def _detect_stock_mentions(articles: list) -> list:
     universe = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST

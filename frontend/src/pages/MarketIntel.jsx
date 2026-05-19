@@ -128,6 +128,24 @@ export default function MarketIntel({ onSelectStock }) {
                         </a>
                       ))}
                     </div>
+                    {t.stocks?.length > 0 && (
+                      <div className="itc-stocks">
+                        <span className="itc-stocks-label">📌 相關個股</span>
+                        <div className="itc-stocks-row">
+                          {t.stocks.map(s => (
+                            <button
+                              key={s.symbol}
+                              className="itc-stock-chip"
+                              onClick={() => onSelectStock(s.symbol)}
+                              title={`點擊查看 ${s.name} K線`}
+                            >
+                              <span className="itc-chip-sym">{s.symbol}</span>
+                              <span className="itc-chip-name">{s.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
