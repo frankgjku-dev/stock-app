@@ -1063,6 +1063,30 @@ async def screener_universe():
     }
 
 
+# ── 磁碟快取（/tmp，HF 重啟後仍保留）────────────────────────
+import json as _json
+import os as _os
+_DISK_CACHE_DIR = "/tmp/twstock_candles"
+_os.makedirs(_DISK_CACHE_DIR, exist_ok=True)
+
+def _disk_cache_load(key: str) -> list:
+    try:
+        path = _os.path.join(_DISK_CACHE_DIR, key.replace(":", "_") + ".json")
+        if _os.path.exists(path):
+            with open(path) as f:
+                return _json.load(f)
+    except Exception:
+        pass
+    return []
+
+def _disk_cache_save(key: str, candles: list):
+    try:
+        path = _os.path.join(_DISK_CACHE_DIR, key.replace(":", "_") + ".json")
+        with open(path, "w") as f:
+            _json.dump(candles, f)
+    except Exception:
+        pass
+
 # ── 官方資料源（無速率限制）────────────────────────────────
 _PERIOD_MONTHS = {"1mo":2,"3mo":4,"6mo":7,"1y":13,"2y":25,"5y":61,"max":61}
 
@@ -1170,6 +1194,46 @@ def _tpex_sync(symbol: str, months: int) -> list:
         time.sleep(0.15)
     return candles
 
+def _stooq_sync(symbol: str, period: str = "1y") -> list:
+    """從 stooq.com 抓台股日線（CSV，完全不同的資料源）"""
+    import requests as req_lib
+    from datetime import date as _date, timedelta as _td
+
+    period_days = {
+        "1mo": 35,  "3mo": 95,  "6mo": 185, "1y":  370,
+        "2y":  740, "5y": 1850, "60d":  65,  "7d":   10,
+    }
+    days  = period_days.get(period, 370)
+    today = _date.today()
+    start = today - _td(days=days)
+    sym   = f"{symbol}.tw"
+    url   = (f"https://stooq.com/q/d/l/?s={sym}"
+             f"&d1={start.strftime('%Y%m%d')}&d2={today.strftime('%Y%m%d')}&i=d")
+    hdrs  = {**_BROWSER_HEADERS, "Referer": "https://stooq.com/"}
+    try:
+        r     = req_lib.get(url, headers=hdrs, timeout=20)
+        lines = r.text.strip().split("\n")
+        if len(lines) < 2 or "No data" in r.text or "<html" in r.text[:50]:
+            return []
+        candles = []
+        for line in lines[1:]:   # 跳過 header
+            parts = line.strip().split(",")
+            if len(parts) < 5:
+                continue
+            try:
+                o = float(parts[1]); h = float(parts[2])
+                l = float(parts[3]); c = float(parts[4])
+                if not (o and h and l and c):
+                    continue
+                v = int(float(parts[5])) if len(parts) > 5 and parts[5].strip() else 0
+                candles.append({"time": parts[0], "open": round(o,2), "high": round(h,2),
+                                "low": round(l,2), "close": round(c,2), "volume": v})
+            except Exception:
+                continue
+        return sorted(candles, key=lambda x: x["time"])
+    except Exception:
+        return []
+
 def _yahoo_chart_sync(symbol: str, period: str = "1y", interval: str = "1d") -> list:
     """直接打 Yahoo Finance Chart API（繞過 yfinance 套件，不同 endpoint 有獨立限速）"""
     import requests as req_lib
@@ -1257,24 +1321,29 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         candles: list = []
         loop = asyncio.get_event_loop()
 
-        # ── 日線：依序嘗試 TWSE → TPEX → Yahoo Chart API ──
+        # ── 日線：TWSE → stooq → TPEX → Yahoo Chart ──────────────
         if not is_intraday and interval == "1d":
             months = _PERIOD_MONTHS.get(period, 13)
-            # 1) TWSE（上市）
+            # 1) TWSE 官方（上市）
             candles = await loop.run_in_executor(executor, _twse_sync, symbol, months)
-            # 2) TPEX（上櫃）
+            # 2) stooq.com（完全不同資料源，CSV 格式）
+            if not candles:
+                candles = await loop.run_in_executor(executor, _stooq_sync, symbol, period)
+            # 3) TPEX（上櫃）
             if not candles:
                 candles = await loop.run_in_executor(executor, _tpex_sync, symbol, months)
-            # 3) Yahoo Chart API 直連（不走 yfinance 套件）
+            # 4) Yahoo Finance Chart API 直連
             if not candles:
                 candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
 
-        # ── 週/月線或分鐘線：Yahoo Chart API → yfinance ──
+        # ── 週/月線或分鐘線：stooq → Yahoo Chart → yfinance ───────
+        if not candles:
+            candles = await loop.run_in_executor(executor, _stooq_sync, symbol, period)
         if not candles:
             candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
 
+        # ── 最後：yfinance 套件 ────────────────────────────────────
         if not candles:
-            # ── 最後嘗試 yfinance 套件 ──
             df = None
             for attempt in range(2):
                 try:
@@ -1313,22 +1382,28 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
                                         "low":round(l,2),"close":round(c2,2),"volume":v})
                     except Exception: continue
 
+        # ── 成功：存入記憶體快取 + 磁碟快取 ──────────────────────
         if candles:
             _candle_cache[cache_key] = (now, candles)
+            await loop.run_in_executor(executor, _disk_cache_save, cache_key, candles)
             return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol), "candles": candles}
 
-        # 所有來源均失敗 → 嘗試回傳舊快取
-        if cache_key in _candle_cache and _candle_cache[cache_key][1]:
-            _, stale = _candle_cache[cache_key]
+        # ── 全部失敗：降級回傳舊快取（記憶體 → 磁碟）─────────────
+        stale = (_candle_cache.get(cache_key) or (None, []))[1]
+        if not stale:
+            stale = await loop.run_in_executor(executor, _disk_cache_load, cache_key)
+        if stale:
             return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
                     "candles": stale, "stale": True}
         return {"symbol": symbol, "candles": [], "error": "No data"}
 
     except Exception as e:
-        # 例外 → 嘗試回傳舊快取
         cache_key = f"{symbol}:{interval}:{period}"
-        if cache_key in _candle_cache and _candle_cache[cache_key][1]:
-            _, stale = _candle_cache[cache_key]
+        stale = (_candle_cache.get(cache_key) or (None, []))[1]
+        if not stale:
+            loop2 = asyncio.get_event_loop()
+            stale = await loop2.run_in_executor(executor, _disk_cache_load, cache_key)
+        if stale:
             return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
                     "candles": stale, "stale": True}
         return {"symbol": symbol, "candles": [], "error": str(e)}
@@ -1777,8 +1852,10 @@ async def analyze_stock(symbol: str):
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 1. 取資料：TWSE → TPEX → Yahoo Chart ──────────────────
+        # ── 1. 取資料：TWSE → stooq → TPEX → Yahoo Chart ─────────
         raw: list = await loop.run_in_executor(executor, _twse_sync, symbol, 14)
+        if not raw:
+            raw = await loop.run_in_executor(executor, _stooq_sync, symbol, "1y")
         if not raw:
             raw = await loop.run_in_executor(executor, _tpex_sync, symbol, 14)
         if not raw:
@@ -1868,6 +1945,8 @@ async def analyze_stock(symbol: str):
         rs_score = None
         try:
             bc_raw = await loop.run_in_executor(executor, _twse_sync, "0050", 14)
+            if not bc_raw:
+                bc_raw = await loop.run_in_executor(executor, _stooq_sync, "0050", "1y")
             if not bc_raw:
                 bc_raw = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
             if len(bc_raw) >= 20:
