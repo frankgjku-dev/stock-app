@@ -1234,6 +1234,47 @@ def _tpex_sync(symbol: str, months: int) -> list:
         time.sleep(0.1)
     return candles
 
+def _finmind_sync(symbol: str, period: str = "1y") -> list:
+    """從 FinMind 抓台股日線（免費、免 API key、不限 IP）"""
+    import requests as req_lib
+    from datetime import date as _date, timedelta as _td
+
+    period_days = {
+        "1mo": 35,  "3mo": 95,  "6mo": 185, "1y":  370,
+        "2y":  740, "5y": 1850, "60d":  65,  "7d":   10,
+    }
+    days  = period_days.get(period, 370)
+    today = _date.today()
+    start = today - _td(days=days)
+    url = "https://api.finmindtrade.com/api/v4/data"
+    params = {
+        "dataset":    "TaiwanStockPrice",
+        "data_id":    symbol,
+        "start_date": start.strftime("%Y-%m-%d"),
+        "end_date":   today.strftime("%Y-%m-%d"),
+    }
+    try:
+        r = req_lib.get(url, params=params, timeout=20)
+        j = r.json()
+        rows = j.get("data") or []
+        candles = []
+        for row in rows:
+            try:
+                candles.append({
+                    "time":   row["date"],
+                    "open":   round(float(row["open"]),  2),
+                    "high":   round(float(row["max"]),   2),
+                    "low":    round(float(row["min"]),   2),
+                    "close":  round(float(row["close"]), 2),
+                    "volume": int(row.get("Trading_Volume", 0)),
+                })
+            except Exception:
+                continue
+        return candles
+    except Exception:
+        return []
+
+
 def _stooq_sync(symbol: str, period: str = "1y") -> list:
     """從 stooq.com 抓台股日線（CSV，完全不同的資料源）"""
     import requests as req_lib
@@ -1367,7 +1408,7 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         _errs: list[str] = []  # 記錄每個來源的失敗原因
 
         # ══ 取資料（每層失敗才往下，盡量少打 API）══════════════════
-        # 1) Yahoo Finance Chart API 直連（2 次請求，最快且可靠）
+        # 1) Yahoo Finance Chart API 直連（最快，有時被 HF IP 限流）
         try:
             candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
             if not candles:
@@ -1375,7 +1416,16 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         except Exception as _e:
             _errs.append(f"Yahoo:{_e}")
 
-        # 2) 日線才用 TWSE（政府站台，穩定，但較慢）
+        # 2) FinMind（免費台股 API，不限 IP，日線專用）
+        if not candles and not is_intraday and interval == "1d":
+            try:
+                candles = await loop.run_in_executor(executor, _finmind_sync, symbol, period)
+                if not candles:
+                    _errs.append("FinMind:無資料")
+            except Exception as _e:
+                _errs.append(f"FinMind:{_e}")
+
+        # 3) TWSE（政府站台，HF 環境下常被封鎖）
         if not candles and not is_intraday and interval == "1d":
             months = _PERIOD_MONTHS.get(period, 13)
             try:
@@ -1898,8 +1948,10 @@ async def analyze_stock(symbol: str):
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 1. 取資料：Yahoo Chart → TWSE ─────────────────────────
+        # ── 1. 取資料：Yahoo Chart → FinMind → TWSE ───────────────
         raw: list = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
+        if not raw:
+            raw = await loop.run_in_executor(executor, _finmind_sync, symbol, "1y")
         if not raw:
             raw = await loop.run_in_executor(executor, _twse_sync, symbol, 14)
         if len(raw) < 60:
@@ -1987,6 +2039,8 @@ async def analyze_stock(symbol: str):
         rs_score = None
         try:
             bc_raw = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
+            if not bc_raw:
+                bc_raw = await loop.run_in_executor(executor, _finmind_sync, "0050", "1y")
             if not bc_raw:
                 bc_raw = await loop.run_in_executor(executor, _twse_sync, "0050", 14)
             if len(bc_raw) >= 20:
