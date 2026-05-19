@@ -1773,143 +1773,193 @@ async def rs_ranking_api(symbols: str = ""):
 
 @app.get("/api/stocks/{symbol}/analyze")
 async def analyze_stock(symbol: str):
-    """單股智能分析：趨勢 + VCP + RS + 建議"""
+    """單股智能分析（完整版）：與選股頁共用 detect_vcp() + check_trend_template()"""
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 取得股價資料：優先 TWSE/TPEX，備援 Yahoo Chart ──
-        raw_candles: list = await loop.run_in_executor(executor, _twse_sync, symbol, 13)
-        if not raw_candles:
-            raw_candles = await loop.run_in_executor(executor, _tpex_sync, symbol, 13)
-        if not raw_candles:
-            raw_candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
-
-        if len(raw_candles) < 60:
+        # ── 1. 取資料：TWSE → TPEX → Yahoo Chart ──────────────────
+        raw: list = await loop.run_in_executor(executor, _twse_sync, symbol, 14)
+        if not raw:
+            raw = await loop.run_in_executor(executor, _tpex_sync, symbol, 14)
+        if not raw:
+            raw = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
+        if len(raw) < 60:
             return {"error": "資料不足，請確認股票代碼是否正確"}
 
-        # 轉成 numpy array（依時間排序）
-        raw_candles.sort(key=lambda x: x["time"])
-        closes = np.array([c["close"] for c in raw_candles], dtype=float)
-        highs  = np.array([c["high"]  for c in raw_candles], dtype=float)
-        lows   = np.array([c["low"]   for c in raw_candles], dtype=float)
-        vols   = np.array([c["volume"] for c in raw_candles], dtype=float)
-        n      = len(closes)
-        c      = closes[-1]
+        raw.sort(key=lambda x: x["time"])
 
-        s = pd.Series(closes)
-        def _ma(w): return round(float(s.rolling(w, min_periods=w).mean().iloc[-1]), 2) if n >= w else None
+        # ── 2. 轉 DataFrame（與 detect_vcp / check_trend_template 相容）──
+        df = pd.DataFrame({
+            "Date":   [r["time"]   for r in raw],
+            "Open":   [r["open"]   for r in raw],
+            "High":   [r["high"]   for r in raw],
+            "Low":    [r["low"]    for r in raw],
+            "Close":  [r["close"]  for r in raw],
+            "Volume": [r["volume"] for r in raw],
+        })
 
-        ma20  = _ma(20);  ma50  = _ma(50)
-        ma150 = _ma(150); ma200 = _ma(200)
-        ma200_20ago = float(s.rolling(200).mean().iloc[-21]) if n >= 221 else None
+        # ── 3. 計算 MA / 52 週高低 ─────────────────────────────────
+        close_s = df["Close"]
+        n       = len(close_s)
+        cur     = float(close_s.iloc[-1])
 
-        h52 = float(pd.Series(highs).rolling(252, min_periods=min(60,n)).max().iloc[-1])
-        l52 = float(pd.Series(lows ).rolling(252, min_periods=min(60,n)).min().iloc[-1])
+        def _ma(w):
+            return round(float(close_s.rolling(w, min_periods=w).mean().iloc[-1]), 2) if n >= w else None
 
-        # ── Trend Template 8 條件 ──
+        ma20  = _ma(20)
+        ma50  = _ma(50)
+        ma150 = _ma(150)
+        ma200 = _ma(200)
+
+        h_arr = df["High"].values.astype(float)
+        l_arr = df["Low"].values.astype(float)
+        v_arr = df["Volume"].values.astype(float)
+        h52   = float(pd.Series(h_arr).rolling(252, min_periods=min(60,n)).max().iloc[-1])
+        l52   = float(pd.Series(l_arr).rolling(252, min_periods=min(60,n)).min().iloc[-1])
+
+        # ── 4. Trend Template 8 條件（與選股頁一致）────────────────
+        ma200_s    = close_s.rolling(200).mean()
+        ma200_now  = float(ma200_s.iloc[-1])  if n >= 200 else None
+        ma200_prev = float(ma200_s.iloc[-21]) if n >= 221 else None
+        m50  = float(close_s.rolling(50).mean().iloc[-1])  if n >= 50  else None
+        m150 = float(close_s.rolling(150).mean().iloc[-1]) if n >= 150 else None
+
         conds = [
-            ("收盤 > MA150",           bool(ma150 and c > ma150)),
-            ("收盤 > MA200",           bool(ma200 and c > ma200)),
-            ("MA150 > MA200",          bool(ma150 and ma200 and ma150 > ma200)),
-            ("MA200 近20日向上",       bool(ma200 and ma200_20ago and ma200 > ma200_20ago)),
-            ("MA50 > MA150 且 MA200",  bool(ma50 and ma150 and ma200 and ma50 > ma150 and ma50 > ma200)),
-            ("收盤 > MA50",            bool(ma50 and c > ma50)),
-            ("距52週低點 ≥ +30%",      c >= l52 * 1.30),
-            ("距52週高點 75% 以內",    c >= h52 * 0.75),
+            ("收盤 > MA150",          bool(m150 and cur > m150)),
+            ("收盤 > MA200",          bool(ma200_now and cur > ma200_now)),
+            ("MA150 > MA200",         bool(m150 and ma200_now and m150 > ma200_now)),
+            ("MA200 近20日向上",      bool(ma200_now and ma200_prev and ma200_now > ma200_prev)),
+            ("MA50 > MA150 且 MA200", bool(m50 and m150 and ma200_now
+                                          and m50 > m150 and m50 > ma200_now)),
+            ("收盤 > MA50",           bool(m50 and cur > m50)),
+            ("距52週低點 ≥ +30%",     cur >= l52 * 1.30),
+            ("距52週高點 ≥ 75%",      cur >= h52 * 0.75),
         ]
         trend_score = sum(1 for _, v in conds if v)
 
-        # ── VCP ──
-        pullbacks = _find_pullback_sequence(highs, lows, vols, lookback=100)
+        # ── 5. VCP 完整偵測（call detect_vcp，與選股頁同一套邏輯）──
+        vcp = detect_vcp(df, cur, m50 or cur, h52)
 
-        # ── 量能 ──
-        avg_vol20 = float(pd.Series(vols).rolling(20, min_periods=5).mean().iloc[-1])
-        vol_ratio = round(float(vols[-1]) / avg_vol20, 2) if avg_vol20 > 0 else 1.0
+        # 取出收縮序列（用於前端顯示回檔明細）
+        all_pbs  = _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100)
+        vcp_seq  = _best_contraction_sequence(all_pbs)
 
-        # ── 樞紐價 ──
-        pivot_price = None
-        dist_to_pivot = None
-        if pullbacks:
-            pivot_price   = round(float(pullbacks[-1]["peak"]) * 1.005, 1)
-            dist_to_pivot = round((pivot_price - c) / c * 100, 1)
+        pivot_price   = vcp.get("pivot") or None
+        dist_to_pivot = vcp.get("dist_pivot")   # 距樞紐 %（>0 表示尚未突破）
+        buy_status    = vcp.get("buy_status", "—")
+        num_cont      = vcp.get("contractions", 0)
+        vcp_details   = vcp.get("details", [])
+        stop_loss_p   = vcp.get("stop_loss") or round(cur * 0.92, 1)
+        base_days     = vcp.get("base_days", 0)
+        higher_lows   = vcp.get("higher_lows", False)
+        vol_contract  = vcp.get("vol_contracting", False)
 
-        # ── 停損 / 目標 ──
-        if pullbacks:
-            swing_low       = float(pullbacks[-1]["trough"])
-            stop_loss_price = round(min(swing_low * 0.99, c * 0.92), 1)
-        else:
-            stop_loss_price = round(c * 0.92, 1)
-        risk_pct     = round((c - stop_loss_price) / c * 100, 1)
-        target_price = round(c * 1.20, 1)
-        rr_ratio     = round(20.0 / risk_pct, 1) if risk_pct > 0 else 0
+        # ── 6. 量能 ────────────────────────────────────────────────
+        avg_vol20 = float(pd.Series(v_arr).rolling(20, min_periods=5).mean().iloc[-1])
+        vol_ratio = round(float(v_arr[-1]) / avg_vol20, 2) if avg_vol20 > 0 else 1.0
 
-        # ── RS vs 0050（也用 TWSE 取基準）──
+        # ── 7. 停損 / 目標 / 損益比 ────────────────────────────────
+        stop_loss_price = round(float(stop_loss_p), 1)
+        risk_pct        = round((cur - stop_loss_price) / cur * 100, 1)
+        target_price    = round(cur * 1.20, 1)
+        rr_ratio        = round(20.0 / risk_pct, 1) if risk_pct > 0 else 0
+
+        # ── 8. RS vs 0050 ───────────────────────────────────────────
         rs_score = None
         try:
-            bench_candles = await loop.run_in_executor(executor, _twse_sync, "0050", 13)
-            if not bench_candles:
-                bench_candles = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
-            if len(bench_candles) >= 20:
-                bench_candles.sort(key=lambda x: x["time"])
-                bc = np.array([c["close"] for c in bench_candles], dtype=float)
-                def _p(arr, d):
+            bc_raw = await loop.run_in_executor(executor, _twse_sync, "0050", 14)
+            if not bc_raw:
+                bc_raw = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
+            if len(bc_raw) >= 20:
+                bc_raw.sort(key=lambda x: x["time"])
+                closes_arr = np.array([r["close"] for r in raw],    dtype=float)
+                bc_arr     = np.array([r["close"] for r in bc_raw], dtype=float)
+                def _ret(arr, d):
                     d2 = min(d, len(arr)-1)
                     return (arr[-1]/arr[-d2]-1)*100 if d2 > 0 else 0
                 rs_score = round(
-                    0.4*(_p(closes,63)-_p(bc,63)) +
-                    0.3*(_p(closes,126)-_p(bc,126)) +
-                    0.3*(_p(closes,252)-_p(bc,252)), 1)
+                    0.4*(_ret(closes_arr,63) -_ret(bc_arr,63))  +
+                    0.3*(_ret(closes_arr,126)-_ret(bc_arr,126)) +
+                    0.3*(_ret(closes_arr,252)-_ret(bc_arr,252)), 1)
         except Exception:
             pass
 
-        # ── 綜合建議 ──
-        if trend_score >= 6 and len(pullbacks) >= 2:
-            if dist_to_pivot is not None and dist_to_pivot < 0:
-                rec, rec_color = "已突破樞紐", "success"
-                rec_detail = f"股價已突破樞紐 {abs(dist_to_pivot):.1f}%，留意是否仍在有效追價範圍（5%內）"
-            elif dist_to_pivot is not None and dist_to_pivot <= 3:
-                rec, rec_color = "即將突破", "warning"
-                rec_detail = f"股價距樞紐僅 {dist_to_pivot:.1f}%，密切關注放量突破訊號"
+        # ── 9. 綜合建議（buy_status + trend_score + VCP 收縮數）──────
+        COND_LABELS = {
+            "放量突破":     ("放量突破樞紐，可積極進場",    "success"),
+            "突破(量不足)": ("突破但量不足，建議等確認",    "warning"),
+        }
+        if buy_status in COND_LABELS:
+            detail_txt, rec_color = COND_LABELS[buy_status]
+            rec = buy_status
+            dist_str = f"（距樞紐 {abs(dist_to_pivot):.1f}%）" if dist_to_pivot is not None else ""
+            rec_detail = f"{detail_txt}{dist_str}。VCP {num_cont} 段收縮，型態分 {vcp.get('score100',0)} 分。"
+        elif buy_status == "過度延伸":
+            rec, rec_color = "突破後勿追高", "neutral"
+            rec_detail = f"股價已突破樞紐超過 5%（{buy_status}），等回測 MA10/MA20 後再找低點介入。"
+        elif trend_score >= 6 and num_cont >= 2:
+            if dist_to_pivot is not None and 0 <= dist_to_pivot <= 3:
+                rec, rec_color = "即將突破，等放量", "warning"
+                rec_detail = (f"距樞紐 {pivot_price} 僅 {dist_to_pivot:.1f}%，整理 {base_days} 日，"
+                              f"{'低點墊高 ✓，' if higher_lows else ''}"
+                              f"{'量能萎縮 ✓，' if vol_contract else ''}"
+                              f"等放量（≥50日均量×1.5）突破後進場。")
             else:
                 rec, rec_color = "等待突破", "info"
-                rec_detail = f"VCP型態良好，耐心等待股價放量突破 ${pivot_price}"
+                pstr = f" ${pivot_price}" if pivot_price else ""
+                rec_detail = (f"VCP {num_cont} 段收縮，型態良好，趨勢 {trend_score}/8 分。"
+                              f"耐心等待放量突破樞紐{pstr}。")
         elif trend_score >= 5:
             rec, rec_color = "持續觀察", "info"
-            rec_detail = "趨勢條件尚可，型態尚未成熟，列入追蹤清單"
+            rec_detail = f"趨勢條件 {trend_score}/8，型態尚未成熟，列入追蹤清單。"
         elif trend_score >= 3:
             rec, rec_color = "暫時觀望", "neutral"
-            rec_detail = "趨勢條件未達 Minervini 標準，建議觀望等待更好時機"
+            rec_detail = f"趨勢條件 {trend_score}/8，未達 Minervini 標準（需 ≥6），建議等待更好時機。"
         else:
             rec, rec_color = "不建議進場", "danger"
-            rec_detail = "趨勢偏弱，股價結構不佳，建議尋找更強勢標的"
+            rec_detail = f"趨勢偏弱（{trend_score}/8），股價結構不佳，建議尋找更強勢標的。"
 
         universe = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
         return {
-            "symbol":     symbol,
-            "name":       universe.get(symbol, STOCK_LIST.get(symbol, symbol)),
-            "price":      round(c, 2),
-            "ma20":       ma20,  "ma50": ma50, "ma150": ma150, "ma200": ma200,
-            "h52":        round(h52, 2), "l52": round(l52, 2),
+            "symbol":  symbol,
+            "name":    universe.get(symbol, STOCK_LIST.get(symbol, symbol)),
+            "price":   round(cur, 2),
+            "ma20":    ma20, "ma50": ma50, "ma150": ma150, "ma200": ma200,
+            "h52":     round(h52, 2), "l52": round(l52, 2),
+            # 趨勢模板
             "trend_score":      trend_score,
-            "trend_conditions": [{"label": l, "pass": v} for l, v in conds],
-            "vcp_count":   len(pullbacks),
-            "vcp_pullbacks": [
+            "trend_conditions": [{"label": lbl, "pass": v} for lbl, v in conds],
+            # VCP（完整版）
+            "vcp_score":      vcp.get("score100", 0),
+            "vcp_count":      num_cont,
+            "vcp_details":    vcp_details,
+            "higher_lows":    higher_lows,
+            "vol_contracting": vol_contract,
+            "base_days":      base_days,
+            "buy_status":     buy_status,
+            "vcp_pullbacks":  [
                 {"peak": round(p["peak"],1), "trough": round(p["trough"],1),
                  "depth_pct": round(p["depth_pct"],1)}
-                for p in pullbacks[-4:]
+                for p in vcp_seq[-4:]
             ],
-            "pivot_price":  pivot_price,
-            "dist_to_pivot": dist_to_pivot,
-            "vol_ratio":    vol_ratio,
-            "avg_vol20":    int(avg_vol20),
-            "rs_score":     rs_score,
-            "stop_loss":    stop_loss_price,
-            "risk_pct":     risk_pct,
-            "target_price": target_price,
-            "rr_ratio":     rr_ratio,
+            # 價位
+            "pivot_price":    pivot_price,
+            "dist_to_pivot":  round(dist_to_pivot, 1) if dist_to_pivot is not None else None,
+            "base_high":      vcp.get("base_high"),
+            # 量能
+            "vol_ratio":  vol_ratio,
+            "avg_vol20":  int(avg_vol20),
+            # RS
+            "rs_score":   rs_score,
+            # 風險報酬
+            "stop_loss":     stop_loss_price,
+            "risk_pct":      risk_pct,
+            "target_price":  target_price,
+            "rr_ratio":      rr_ratio,
+            # 建議
             "recommendation": rec,
-            "rec_color":    rec_color,
-            "rec_detail":   rec_detail,
+            "rec_color":      rec_color,
+            "rec_detail":     rec_detail,
         }
     except Exception as e:
         import traceback

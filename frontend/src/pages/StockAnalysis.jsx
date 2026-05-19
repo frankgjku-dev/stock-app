@@ -240,32 +240,57 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
               </div>
             </div>
 
-            {/* VCP 型態 */}
+            {/* VCP 型態（完整版） */}
             <div className="ar-card">
               <div className="ar-card-title">
                 🔁 VCP 型態
                 <span className="ar-vcp-badge">{data.vcp_count} 段收縮</span>
+                {data.vcp_score > 0 && (
+                  <span className="ar-vcp-score">{data.vcp_score}分</span>
+                )}
               </div>
               {data.vcp_pullbacks.length === 0 ? (
-                <div className="ar-empty">未偵測到明顯 VCP 型態</div>
+                <div className="ar-empty">未偵測到符合條件的 VCP 型態<br/>
+                  <span style={{fontSize:11,opacity:0.7}}>需：深度遞減＋低點墊高＋每段縮小≥20%</span>
+                </div>
               ) : (
                 <div className="ar-vcps">
+                  {/* 回檔明細 */}
                   {data.vcp_pullbacks.map((p, i) => (
                     <div key={i} className="ar-vcp-row">
                       <span className="ar-vcp-idx">第 {i+1} 段</span>
-                      <span>高點 ${p.peak}</span>
-                      <span className="down">↓ {p.depth_pct}%</span>
-                      <span>低點 ${p.trough}</span>
+                      <span>${p.peak}</span>
+                      <span className="down">↓{p.depth_pct}%</span>
+                      <span>${p.trough}</span>
                     </div>
                   ))}
+                  {/* 型態標籤 */}
+                  <div className="ar-vcp-tags">
+                    {data.higher_lows && <span className="ar-tag green">低點墊高✓</span>}
+                    {data.vol_contracting && <span className="ar-tag green">量能萎縮✓</span>}
+                    {data.base_days > 0 && <span className="ar-tag">整理{data.base_days}日</span>}
+                  </div>
+                  {/* 樞紐點 */}
                   {data.pivot_price && (
                     <div className="ar-pivot-line">
-                      📌 樞紐價：<strong>${data.pivot_price}</strong>
+                      📌 樞紐點（買入觸發）：<strong>${data.pivot_price}</strong>
                       {data.dist_to_pivot !== null && (
-                        <span className={data.dist_to_pivot <= 3 ? 'up' : 'flat'}>
-                          　距離 {data.dist_to_pivot > 0 ? '+' : ''}{data.dist_to_pivot}%
+                        <span className={data.dist_to_pivot <= 0 ? 'up' : data.dist_to_pivot <= 3 ? 'warning-text' : 'flat'}>
+                          　{data.dist_to_pivot > 0 ? `距離 +${data.dist_to_pivot}%` : `已突破 ${Math.abs(data.dist_to_pivot)}%`}
                         </span>
                       )}
+                    </div>
+                  )}
+                  {/* 狀態 */}
+                  {data.buy_status && data.buy_status !== '—' && (
+                    <div className="ar-buy-status">
+                      現況：<strong>{data.buy_status}</strong>
+                    </div>
+                  )}
+                  {/* VCP 評分細節 */}
+                  {data.vcp_details?.length > 0 && (
+                    <div className="ar-vcp-detail-list">
+                      {data.vcp_details.map((d, i) => <span key={i} className="ar-vcp-detail">{d}</span>)}
                     </div>
                   )}
                 </div>
