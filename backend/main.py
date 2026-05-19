@@ -1275,11 +1275,14 @@ def _stooq_sync(symbol: str, period: str = "1y") -> list:
         return []
 
 def _yahoo_chart_sync(symbol: str, period: str = "1y", interval: str = "1d") -> list:
-    """直接打 Yahoo Finance Chart API（繞過 yfinance 套件，不同 endpoint 有獨立限速）"""
+    """直接打 Yahoo Finance Chart API（繞過 yfinance 套件，不同 endpoint 有獨立限速）
+    自動試 .TW（上市）→ .TWO（上櫃）兩種後綴。
+    """
     import requests as req_lib
     import time as _time
 
-    yf_sym = to_yf(symbol)
+    # 上市用 .TW，上櫃用 .TWO，自動fallback
+    candidates = [f"{symbol}.TW", f"{symbol}.TWO"]
     period_secs = {
         "1mo": 30*86400,  "3mo": 90*86400,  "6mo": 180*86400,
         "1y":  365*86400, "2y":  730*86400,  "5y":  1825*86400,
@@ -1288,53 +1291,54 @@ def _yahoo_chart_sync(symbol: str, period: str = "1y", interval: str = "1d") -> 
     end_ts = int(_time.time())
     start_ts = end_ts - period_secs.get(period, 365*86400)
 
-    for base in ("query2", "query1"):
-        url = f"https://{base}.finance.yahoo.com/v8/finance/chart/{yf_sym}"
-        params = {
-            "period1": start_ts, "period2": end_ts,
-            "interval": interval, "events": "history",
-            "includeAdjustedClose": "true",
-        }
-        hdrs = {
-            **_BROWSER_HEADERS,
-            "Referer": "https://finance.yahoo.com/",
-        }
-        try:
-            r = req_lib.get(url, params=params, headers=hdrs, timeout=20)
-            j = r.json()
-            result = (j.get("chart") or {}).get("result") or []
-            if not result:
-                continue
-            data = result[0]
-            timestamps = data.get("timestamp") or []
-            quote = (data.get("indicators") or {}).get("quote") or [{}]
-            q = quote[0]
-            opens   = q.get("open",   [])
-            highs   = q.get("high",   [])
-            lows    = q.get("low",    [])
-            closes  = q.get("close",  [])
-            volumes = q.get("volume", [])
-            candles = []
-            for i, ts in enumerate(timestamps):
-                try:
-                    o = opens[i]; h = highs[i]; l = lows[i]; c = closes[i]
-                    if any(x is None for x in (o, h, l, c)):
-                        continue
-                    v = volumes[i] or 0
-                    if interval in ("1d", "1wk", "1mo"):
-                        from datetime import datetime as _dt
-                        time_val = _dt.utcfromtimestamp(ts).strftime("%Y-%m-%d")
-                    else:
-                        time_val = int(ts)
-                    candles.append({"time": time_val, "open": round(float(o), 2),
-                                    "high": round(float(h), 2), "low": round(float(l), 2),
-                                    "close": round(float(c), 2), "volume": int(v)})
-                except Exception:
+    for yf_sym in candidates:          # 先試 .TW，再試 .TWO
+        for base in ("query2", "query1"):
+            url = f"https://{base}.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+            params = {
+                "period1": start_ts, "period2": end_ts,
+                "interval": interval, "events": "history",
+                "includeAdjustedClose": "true",
+            }
+            hdrs = {
+                **_BROWSER_HEADERS,
+                "Referer": "https://finance.yahoo.com/",
+            }
+            try:
+                r = req_lib.get(url, params=params, headers=hdrs, timeout=20)
+                j = r.json()
+                result = (j.get("chart") or {}).get("result") or []
+                if not result:
                     continue
-            if candles:
-                return candles
-        except Exception:
-            continue
+                data = result[0]
+                timestamps = data.get("timestamp") or []
+                quote = (data.get("indicators") or {}).get("quote") or [{}]
+                q = quote[0]
+                opens   = q.get("open",   [])
+                highs   = q.get("high",   [])
+                lows    = q.get("low",    [])
+                closes  = q.get("close",  [])
+                volumes = q.get("volume", [])
+                candles = []
+                for i, ts in enumerate(timestamps):
+                    try:
+                        o = opens[i]; h = highs[i]; l = lows[i]; c = closes[i]
+                        if any(x is None for x in (o, h, l, c)):
+                            continue
+                        v = volumes[i] or 0
+                        if interval in ("1d", "1wk", "1mo"):
+                            from datetime import datetime as _dt
+                            time_val = _dt.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+                        else:
+                            time_val = int(ts)
+                        candles.append({"time": time_val, "open": round(float(o), 2),
+                                        "high": round(float(h), 2), "low": round(float(l), 2),
+                                        "close": round(float(c), 2), "volume": int(v)})
+                    except Exception:
+                        continue
+                if candles:
+                    return candles
+            except Exception:
+                continue
     return []
 
 
