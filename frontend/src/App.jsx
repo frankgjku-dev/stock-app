@@ -5,12 +5,15 @@ import DrawingToolbar   from './components/DrawingToolbar'
 import IndicatorBar     from './components/IndicatorBar'
 import WatchlistSidebar from './components/WatchlistSidebar'
 import AuthModal        from './components/AuthModal'
+import AlertsModal      from './components/AlertsModal'
+import Institutional    from './components/Institutional'
 import Screener         from './pages/Screener'
 import Calculator       from './pages/Calculator'
 import Journal          from './pages/Journal'
 import Backtest         from './pages/Backtest'
 import Holdings         from './pages/Holdings'
 import MarketIntel      from './pages/MarketIntel'
+import RSRanking        from './pages/RSRanking'
 import useStockData     from './hooks/useStockData'
 import { supabase }     from './lib/supabase'
 
@@ -22,6 +25,7 @@ const TABS = [
   { id: 'calculator', label: '部位計算機' },
   { id: 'holdings',   label: '📊 持倉' },
   { id: 'journal',    label: '交易日誌' },
+  { id: 'rs',         label: '💪 RS排行' },
 ]
 
 const DEFAULT_WATCHLIST = { groups: [] }
@@ -54,6 +58,8 @@ export default function App() {
   const [holdings,  setHoldings]  = useState(() => ls('tw_holdings',  []))
   const [journal,   setJournal]   = useState(() => ls('tw_journal',   []))
   const [drawings,  setDrawings]  = useState(() => ls('tw_drawings',  {}))
+  const [alerts,    setAlerts]    = useState(() => ls('tw_alerts',    []))
+  const [showAlerts, setShowAlerts] = useState(false)
 
   const chartClearRef = useRef(null)
 
@@ -62,10 +68,12 @@ export default function App() {
   const holdingsRef  = useRef(holdings)
   const journalRef   = useRef(journal)
   const drawingsRef  = useRef(drawings)
+  const alertsRef    = useRef(alerts)
   watchlistRef.current = watchlist
   holdingsRef.current  = holdings
   journalRef.current   = journal
   drawingsRef.current  = drawings
+  alertsRef.current    = alerts
 
   /* ══════════════════════════════════════════════════
      雲端同步工具函式
@@ -73,7 +81,7 @@ export default function App() {
   async function loadFromCloud(uid) {
     const { data, error } = await supabase
       .from('user_data')
-      .select('watchlist, holdings, journal, drawings')
+      .select('watchlist, holdings, journal, drawings, alerts')
       .eq('id', uid)
       .single()
     if (error || !data) return
@@ -81,6 +89,7 @@ export default function App() {
     if (data.holdings)  { setHoldings(data.holdings);   localStorage.setItem('tw_holdings',  JSON.stringify(data.holdings)) }
     if (data.journal)   { setJournal(data.journal);     localStorage.setItem('tw_journal',   JSON.stringify(data.journal)) }
     if (data.drawings)  { setDrawings(data.drawings);   localStorage.setItem('tw_drawings',  JSON.stringify(data.drawings)) }
+    if (data.alerts)    { setAlerts(data.alerts);        localStorage.setItem('tw_alerts',    JSON.stringify(data.alerts)) }
   }
 
   function scheduleSync() {
@@ -94,6 +103,7 @@ export default function App() {
         holdings:  holdingsRef.current,
         journal:   journalRef.current,
         drawings:  drawingsRef.current,
+        alerts:    alertsRef.current,
         updated_at: new Date().toISOString(),
       })
       setSyncing(false)
@@ -118,6 +128,60 @@ export default function App() {
   useEffect(() => { localStorage.setItem('tw_holdings',  JSON.stringify(holdings));  if (user) scheduleSync() }, [holdings])
   useEffect(() => { localStorage.setItem('tw_journal',   JSON.stringify(journal));   if (user) scheduleSync() }, [journal])
   useEffect(() => { localStorage.setItem('tw_drawings',  JSON.stringify(drawings));  if (user) scheduleSync() }, [drawings])
+  useEffect(() => { localStorage.setItem('tw_alerts',    JSON.stringify(alerts));    if (user) scheduleSync() }, [alerts])
+
+  /* ── 警示輪詢（每 60 秒）── */
+  useEffect(() => {
+    const tick = async () => {
+      const current = alertsRef.current
+      const active = current.filter(a => !a.triggered)
+      if (active.length === 0) return
+
+      // Request notification permission once
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {})
+      }
+
+      const updated = [...current]
+      let changed = false
+
+      for (const alert of active) {
+        try {
+          const res = await fetch(`/api/stocks/${alert.symbol}/quote`)
+          const q = await res.json()
+          const price = q.price ?? q.close ?? null
+          if (price === null) continue
+
+          const hit =
+            (alert.type === 'above' && price >= alert.price) ||
+            (alert.type === 'below' && price <= alert.price)
+
+          if (hit) {
+            const idx = updated.findIndex(a => a.id === alert.id)
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], triggered: true, triggeredAt: new Date().toLocaleString() }
+              changed = true
+              if (Notification.permission === 'granted') {
+                new Notification(`🔔 ${alert.symbol} 警示觸發`, {
+                  body: `${alert.symbol} 現價 ${price}，已${alert.type === 'above' ? '突破' : '跌破'} ${alert.price}`,
+                })
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (changed) setAlerts(updated)
+    }
+
+    tick()
+    const id = setInterval(tick, 60000)
+    return () => clearInterval(id)
+  }, [])
+
+  /* ── alerts 操作 ── */
+  const addAlert    = useCallback((a) => setAlerts(prev => [...prev, a]), [])
+  const removeAlert = useCallback((id) => setAlerts(prev => prev.filter(a => a.id !== id)), [])
 
   /* ── 登出 ── */
   async function handleLogout() {
@@ -208,6 +272,14 @@ export default function App() {
 
       {/* ── 雲端同步狀態列 ── */}
       <div className="sync-bar">
+        {/* 🔔 警示鈴 */}
+        <button className="bell-btn" onClick={() => setShowAlerts(true)}>
+          🔔
+          {alerts.filter(a => !a.triggered).length > 0 && (
+            <span className="bell-badge">{alerts.filter(a => !a.triggered).length}</span>
+          )}
+        </button>
+
         {user ? (
           <>
             <span className="sync-user">☁ {user.email}</span>
@@ -263,6 +335,7 @@ export default function App() {
                 onDrawingsChange={handleDrawingsChange}
               />
             </div>
+            <Institutional symbol={symbol} />
           </div>
           <WatchlistSidebar
             watchlist={watchlist} currentSymbol={symbol}
@@ -298,8 +371,25 @@ export default function App() {
         />
       )}
 
+      {tab === 'rs' && (
+        <RSRanking
+          watchlist={watchlist}
+          onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
+        />
+      )}
+
       {/* ── 登入 Modal ── */}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+
+      {/* ── 警示 Modal ── */}
+      {showAlerts && (
+        <AlertsModal
+          alerts={alerts}
+          onAdd={addAlert}
+          onRemove={removeAlert}
+          onClose={() => setShowAlerts(false)}
+        />
+      )}
     </div>
   )
 }

@@ -1452,6 +1452,111 @@ async def intel_status():
 
 
 # ══════════════════════════════════════════════════════════
+#  法人籌碼 API
+# ══════════════════════════════════════════════════════════
+@app.get("/api/stocks/{symbol}/institutional")
+async def get_institutional(symbol: str):
+    """TWSE 三大法人近10個交易日買賣超"""
+    results = []
+    check_date = datetime.now(TAIWAN_TZ)
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        attempts = 0
+        while len(results) < 10 and attempts < 25:
+            if check_date.weekday() < 5:  # skip weekends
+                date_str = check_date.strftime("%Y%m%d")
+                try:
+                    url = f"https://www.twse.com.tw/fund/T86?response=json&date={date_str}&selectType=ALLBUT0999"
+                    resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                    data = resp.json()
+                    if data.get("stat") == "OK" and data.get("data"):
+                        for row in data["data"]:
+                            if row[0].strip() == symbol:
+                                def parse_num(s):
+                                    s = s.replace(",", "").replace(" ", "")
+                                    try: return int(s)
+                                    except: return 0
+                                results.append({
+                                    "date": check_date.strftime("%m/%d"),
+                                    "foreign_net": parse_num(row[4]),
+                                    "trust_net":   parse_num(row[7]),
+                                    "dealer_net":  parse_num(row[8]),
+                                    "total_net":   parse_num(row[9]),
+                                })
+                                break
+                except Exception:
+                    pass
+            check_date -= timedelta(days=1)
+            attempts += 1
+
+    return {"symbol": symbol, "data": list(reversed(results))}
+
+
+# ══════════════════════════════════════════════════════════
+#  RS 排行榜 API
+# ══════════════════════════════════════════════════════════
+@app.get("/api/rs-ranking")
+async def rs_ranking_api(symbols: str = ""):
+    """計算各股相對強度 (RS)，以 0050 為基準"""
+    sym_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not sym_list:
+        sym_list = list(STOCK_LIST.keys())[:30]
+
+    # Add benchmark
+    all_tickers = [to_yf(s) for s in sym_list] + ["0050.TW"]
+
+    def _calc():
+        try:
+            raw = yf.download(all_tickers, period="1y", progress=False, auto_adjust=True)
+            closes = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
+
+            bench_tk = "0050.TW"
+            bench = closes[bench_tk].dropna() if bench_tk in closes.columns else None
+
+            result = []
+            for sym, tk in zip(sym_list, [to_yf(s) for s in sym_list]):
+                try:
+                    prices = closes[tk].dropna() if tk in closes.columns else pd.Series()
+                    if len(prices) < 60 or bench is None or len(bench) < 60:
+                        continue
+
+                    def pct_change(series, days):
+                        n = min(days, len(series)-1)
+                        return (float(series.iloc[-1]) / float(series.iloc[-n]) - 1) * 100 if n > 0 else 0
+
+                    ch3  = pct_change(prices, 63)
+                    ch6  = pct_change(prices, 126)
+                    ch12 = pct_change(prices, 252)
+                    b3   = pct_change(bench,  63)
+                    b6   = pct_change(bench,  126)
+                    b12  = pct_change(bench,  252)
+
+                    # RS score relative to benchmark
+                    rs = round(0.4*(ch3-b3) + 0.3*(ch6-b6) + 0.3*(ch12-b12), 1)
+
+                    universe = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+                    result.append({
+                        "symbol": sym,
+                        "name": universe.get(sym, STOCK_LIST.get(sym, sym)),
+                        "rs": rs,
+                        "ch3": round(ch3, 1),
+                        "ch6": round(ch6, 1),
+                        "ch12": round(ch12, 1),
+                        "price": round(float(prices.iloc[-1]), 2),
+                    })
+                except Exception:
+                    pass
+            result.sort(key=lambda x: x["rs"], reverse=True)
+            return result
+        except Exception:
+            return []
+
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(executor, _calc)
+    return {"data": data}
+
+
+# ══════════════════════════════════════════════════════════
 #  回測 API
 # ══════════════════════════════════════════════════════════
 @app.get("/api/stocks/{symbol}/backtest")
