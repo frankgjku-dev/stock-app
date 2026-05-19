@@ -8,20 +8,35 @@ export default function useStockData(symbol, interval, period) {
   const [error,   setError]   = useState(null)
   const pollRef = useRef(null)
 
-  // Historical candles
+  // Historical candles（最多重試 3 次，避免 yfinance rate-limit 暫時失敗）
   useEffect(() => {
     if (!symbol) return
     setLoading(true)
     setError(null)
 
-    fetch(`${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.error && !data.candles?.length) throw new Error(data.error)
-        setCandles(data.candles ?? [])
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
+    const url = `${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`;
+
+    (async () => {
+      let lastErr = ''
+      for (let i = 0; i < 3; i++) {
+        try {
+          if (i > 0) await new Promise(r => setTimeout(r, 2000))
+          const res  = await fetch(url)
+          const data = await res.json()
+          if (data.candles?.length) {
+            setCandles(data.candles)
+            setError(null)
+            setLoading(false)
+            return
+          }
+          lastErr = data.error || 'No data'
+        } catch (e) {
+          lastErr = e.message
+        }
+      }
+      setError(lastErr)
+      setLoading(false)
+    })()
   }, [symbol, interval, period])
 
   // Real-time quote polling (every 5 s)

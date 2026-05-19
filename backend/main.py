@@ -1082,13 +1082,20 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
                         "candles": cached_candles}
 
         loop = asyncio.get_event_loop()
-        df = await loop.run_in_executor(
-            executor,
-            lambda: yf.Ticker(to_yf(symbol)).history(
-                period=period, interval=interval, auto_adjust=True
+        # yfinance 在 HF 上偶爾因 rate-limit 返回空，最多重試 3 次
+        df = None
+        for attempt in range(3):
+            df = await loop.run_in_executor(
+                executor,
+                lambda: yf.Ticker(to_yf(symbol)).history(
+                    period=period, interval=interval, auto_adjust=True
+                )
             )
-        )
-        if df.empty:
+            if not df.empty:
+                break
+            if attempt < 2:
+                await asyncio.sleep(1.5)
+        if df is None or df.empty:
             return {"symbol": symbol, "candles": [], "error": "No data"}
 
         df = df.reset_index()
