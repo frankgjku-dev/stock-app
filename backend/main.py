@@ -1777,33 +1777,22 @@ async def analyze_stock(symbol: str):
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 取得股價資料（含重試）──
-        df_raw = None
-        for _ in range(3):
-            df_raw = await loop.run_in_executor(
-                executor,
-                lambda: yf.Ticker(to_yf(symbol)).history(period="1y", interval="1d", auto_adjust=True)
-            )
-            if df_raw is not None and not df_raw.empty:
-                break
-            await asyncio.sleep(1)
-        if df_raw is None or df_raw.empty or len(df_raw) < 60:
+        # ── 取得股價資料：優先 TWSE/TPEX，備援 Yahoo Chart ──
+        raw_candles: list = await loop.run_in_executor(executor, _twse_sync, symbol, 13)
+        if not raw_candles:
+            raw_candles = await loop.run_in_executor(executor, _tpex_sync, symbol, 13)
+        if not raw_candles:
+            raw_candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
+
+        if len(raw_candles) < 60:
             return {"error": "資料不足，請確認股票代碼是否正確"}
 
-        df = df_raw.reset_index()
-
-        # ── 欄位名稱正規化（相容 yfinance 不同版本）──
-        col_map = {}
-        for col in df.columns:
-            key = col.lower() if isinstance(col, str) else str(col).lower()
-            col_map[key] = col
-        def _get(name):
-            return df[col_map[name.lower()]].values.astype(float)
-
-        closes = _get("Close")
-        highs  = _get("High")
-        lows   = _get("Low")
-        vols   = _get("Volume")
+        # 轉成 numpy array（依時間排序）
+        raw_candles.sort(key=lambda x: x["time"])
+        closes = np.array([c["close"] for c in raw_candles], dtype=float)
+        highs  = np.array([c["high"]  for c in raw_candles], dtype=float)
+        lows   = np.array([c["low"]   for c in raw_candles], dtype=float)
+        vols   = np.array([c["volume"] for c in raw_candles], dtype=float)
         n      = len(closes)
         c      = closes[-1]
 
@@ -1854,15 +1843,15 @@ async def analyze_stock(symbol: str):
         target_price = round(c * 1.20, 1)
         rr_ratio     = round(20.0 / risk_pct, 1) if risk_pct > 0 else 0
 
-        # ── RS vs 0050 ──
+        # ── RS vs 0050（也用 TWSE 取基準）──
         rs_score = None
         try:
-            bench_raw = await loop.run_in_executor(
-                executor,
-                lambda: yf.Ticker("0050.TW").history(period="1y", interval="1d", auto_adjust=True)
-            )
-            if bench_raw is not None and not bench_raw.empty:
-                bc = bench_raw["Close"].values.astype(float)
+            bench_candles = await loop.run_in_executor(executor, _twse_sync, "0050", 13)
+            if not bench_candles:
+                bench_candles = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
+            if len(bench_candles) >= 20:
+                bench_candles.sort(key=lambda x: x["time"])
+                bc = np.array([c["close"] for c in bench_candles], dtype=float)
                 def _p(arr, d):
                     d2 = min(d, len(arr)-1)
                     return (arr[-1]/arr[-d2]-1)*100 if d2 > 0 else 0

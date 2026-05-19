@@ -113,10 +113,10 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
       <div className="analysis-search-bar">
         <div className="analysis-title">🔍 個股智能分析</div>
         <div className="analysis-search-row" ref={dropRef} style={{ position: 'relative' }}>
-          <div style={{ position: 'relative', flex: 1 }}>
+          <div style={{ position: 'relative' }}>
             <input
               className="analysis-input"
-              placeholder="輸入股票代碼或名稱，如 2330 / 台積電"
+              placeholder="代碼或名稱"
               value={sym}
               onChange={e => handleInput(e.target.value)}
               onKeyDown={e => {
