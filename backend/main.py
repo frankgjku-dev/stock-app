@@ -1360,15 +1360,26 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
 
         candles: list = []
         loop = asyncio.get_event_loop()
+        _errs: list[str] = []  # 記錄每個來源的失敗原因
 
         # ══ 取資料（每層失敗才往下，盡量少打 API）══════════════════
         # 1) Yahoo Finance Chart API 直連（2 次請求，最快且可靠）
-        candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
+        try:
+            candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
+            if not candles:
+                _errs.append("Yahoo:無資料")
+        except Exception as _e:
+            _errs.append(f"Yahoo:{_e}")
 
         # 2) 日線才用 TWSE（政府站台，穩定，但較慢）
         if not candles and not is_intraday and interval == "1d":
             months = _PERIOD_MONTHS.get(period, 13)
-            candles = await loop.run_in_executor(executor, _twse_sync, symbol, months)
+            try:
+                candles = await loop.run_in_executor(executor, _twse_sync, symbol, months)
+                if not candles:
+                    _errs.append("TWSE:無資料")
+            except Exception as _e:
+                _errs.append(f"TWSE:{_e}")
 
         # ── 最後：yfinance 套件 ────────────────────────────────────
         if not candles:
@@ -1383,8 +1394,10 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
                     )
                     if df is not None and not df.empty:
                         break
-                except Exception:
-                    pass
+                    else:
+                        _errs.append("yfinance:無資料")
+                except Exception as _e:
+                    _errs.append(f"yfinance:{_e}")
                 if attempt < 1:
                     await asyncio.sleep(3)
 
@@ -1423,7 +1436,8 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         if stale:
             return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
                     "candles": stale, "stale": True}
-        return {"symbol": symbol, "candles": [], "error": "No data"}
+        err_msg = " | ".join(_errs) if _errs else "所有來源皆無資料"
+        return {"symbol": symbol, "candles": [], "error": err_msg}
 
     except Exception as e:
         cache_key = f"{symbol}:{interval}:{period}"

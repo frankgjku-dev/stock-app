@@ -325,9 +325,9 @@ export default function App() {
             <div className="chart-wrapper">
               {loading && <div className="loading-overlay">載入中…</div>}
               {error && !loading && (
-                <div className="loading-overlay" style={{ color:'#c85a50', fontSize:13, flexDirection:'column', gap:8 }}>
-                  <div>⚠️ 無法載入 K 線資料</div>
-                  <div style={{ fontSize:11, opacity:0.7 }}>{error}</div>
+                <div className="loading-overlay" style={{ color:'#c85a50', fontSize:13, flexDirection:'column', gap:10 }}>
+                  <div style={{ fontSize:15, fontWeight:600 }}>⚠️ 無法載入 K 線資料</div>
+                  <div style={{ fontSize:12, opacity:0.9, background:'#c85a5022', border:'1px solid #c85a5055', borderRadius:6, padding:'6px 12px', maxWidth:400, wordBreak:'break-all' }}>{error}</div>
                 </div>
               )}
               <Chart
