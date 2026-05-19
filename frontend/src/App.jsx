@@ -16,6 +16,7 @@ import MarketIntel      from './pages/MarketIntel'
 import RSRanking        from './pages/RSRanking'
 import useStockData     from './hooks/useStockData'
 import { supabase }     from './lib/supabase'
+import { API_BASE }     from './config'
 
 const TABS = [
   { id: 'chart',      label: 'K線分析' },
@@ -147,7 +148,7 @@ export default function App() {
 
       for (const alert of active) {
         try {
-          const res = await fetch(`/api/stocks/${alert.symbol}/quote`)
+          const res = await fetch(`${API_BASE}/api/stocks/${alert.symbol}/quote`)
           const q = await res.json()
           const price = q.price ?? q.close ?? null
           if (price === null) continue

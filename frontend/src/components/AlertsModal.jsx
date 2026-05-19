@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { API_BASE } from '../config'
 
 export default function AlertsModal({ alerts, onAdd, onRemove, onClose }) {
   const [stockPool, setStockPool]   = useState({})
@@ -9,11 +10,16 @@ export default function AlertsModal({ alerts, onAdd, onRemove, onClose }) {
   const [type,      setType]        = useState('above')
   const dropRef = useRef(null)
 
-  /* 載入股票清單 */
+  /* 載入股票清單（後端返回 [{symbol, name}] array） */
   useEffect(() => {
-    fetch('/api/stocks/list')
+    fetch(`${API_BASE}/api/stocks/list`)
       .then(r => r.json())
-      .then(d => setStockPool(d.stocks || {}))
+      .then(arr => {
+        // 轉成 { symbol: name } dict 方便查找
+        const pool = {}
+        if (Array.isArray(arr)) arr.forEach(({ symbol, name }) => { pool[symbol] = name })
+        setStockPool(pool)
+      })
       .catch(() => {})
   }, [])
 

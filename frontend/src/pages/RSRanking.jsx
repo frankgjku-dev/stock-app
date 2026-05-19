@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { API_BASE } from '../config'
 
-const API = '/api/rs-ranking'
+const API = `${API_BASE}/api/rs-ranking`
 
 export default function RSRanking({ watchlist, onSelectStock }) {
   const [rows,    setRows]    = useState([])

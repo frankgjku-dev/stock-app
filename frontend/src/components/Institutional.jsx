@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_BASE } from '../config'
 
 function fmt(n) {
   if (n === 0) return '0'
@@ -22,7 +23,7 @@ export default function Institutional({ symbol }) {
   useEffect(() => {
     if (!open) return
     setLoading(true)
-    fetch(`/api/stocks/${symbol}/institutional`)
+    fetch(`${API_BASE}/api/stocks/${symbol}/institutional`)
       .then(r => r.json())
       .then(d => setData(d.data || []))
       .catch(() => setData([]))
@@ -33,7 +34,7 @@ export default function Institutional({ symbol }) {
   useEffect(() => {
     if (!open) return
     setLoading(true)
-    fetch(`/api/stocks/${symbol}/institutional`)
+    fetch(`${API_BASE}/api/stocks/${symbol}/institutional`)
       .then(r => r.json())
       .then(d => setData(d.data || []))
       .catch(() => setData([]))
