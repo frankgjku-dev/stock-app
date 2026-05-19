@@ -1052,6 +1052,46 @@ async def stock_list_all():
     return [{"symbol": k, "name": v} for k, v in pool.items()]
 
 
+@app.get("/api/debug/sources")
+async def debug_sources():
+    """測試各資料源是否可從 HF 正常抓到資料（診斷用）"""
+    import time as _time_mod
+    loop  = asyncio.get_event_loop()
+    sym   = "2330"
+    out   = {}
+
+    for name, fn, args in [
+        ("stooq",       _stooq_sync,        (sym, "1mo")),
+        ("yahoo_chart", _yahoo_chart_sync,   (sym, "1mo", "1d")),
+        ("twse",        _twse_sync,          (sym, 2)),
+        ("tpex",        _tpex_sync,          ("6669", 2)),
+    ]:
+        t0 = _time_mod.time()
+        try:
+            rows = await loop.run_in_executor(executor, fn, *args)
+            out[name] = {
+                "ok":      bool(rows),
+                "rows":    len(rows),
+                "sample":  rows[-1] if rows else None,
+                "elapsed": round(_time_mod.time() - t0, 2),
+            }
+        except Exception as e:
+            out[name] = {"ok": False, "error": str(e), "elapsed": round(_time_mod.time() - t0, 2)}
+
+    # yfinance 最後測（容易超時）
+    t0 = _time_mod.time()
+    try:
+        df = await loop.run_in_executor(
+            executor,
+            lambda: yf.Ticker("2330.TW").history(period="5d", interval="1d", auto_adjust=True)
+        )
+        out["yfinance"] = {"ok": not df.empty, "rows": len(df), "elapsed": round(_time_mod.time() - t0, 2)}
+    except Exception as e:
+        out["yfinance"] = {"ok": False, "error": str(e), "elapsed": round(_time_mod.time() - t0, 2)}
+
+    return out
+
+
 @app.get("/api/screener/universe")
 async def screener_universe():
     """回傳目前選股池的股票數與清單（前端顯示用）"""
