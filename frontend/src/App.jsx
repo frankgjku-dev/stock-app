@@ -14,6 +14,7 @@ import Backtest         from './pages/Backtest'
 import Holdings         from './pages/Holdings'
 import MarketIntel      from './pages/MarketIntel'
 import RSRanking        from './pages/RSRanking'
+import StockAnalysis    from './pages/StockAnalysis'
 import useStockData     from './hooks/useStockData'
 import { supabase }     from './lib/supabase'
 import { API_BASE }     from './config'
@@ -27,6 +28,7 @@ const TABS = [
   { id: 'holdings',   label: '📊 持倉' },
   { id: 'journal',    label: '交易日誌' },
   { id: 'rs',         label: '💪 RS排行' },
+  { id: 'analysis',   label: '🔍 個股分析' },
 ]
 
 const DEFAULT_WATCHLIST = { groups: [] }
@@ -375,6 +377,13 @@ export default function App() {
       {tab === 'rs' && (
         <RSRanking
           watchlist={watchlist}
+          onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
+        />
+      )}
+
+      {tab === 'analysis' && (
+        <StockAnalysis
+          currentSymbol={symbol}
           onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
         />
       )}

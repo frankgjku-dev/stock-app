@@ -1563,6 +1563,149 @@ async def rs_ranking_api(symbols: str = ""):
     return {"data": data}
 
 
+@app.get("/api/stocks/{symbol}/analyze")
+async def analyze_stock(symbol: str):
+    """單股智能分析：趨勢 + VCP + RS + 建議"""
+    loop = asyncio.get_event_loop()
+
+    # ── 取得股價資料（含重試）──
+    df_raw = None
+    for _ in range(3):
+        df_raw = await loop.run_in_executor(
+            executor,
+            lambda: yf.Ticker(to_yf(symbol)).history(period="1y", interval="1d", auto_adjust=True)
+        )
+        if df_raw is not None and not df_raw.empty:
+            break
+        await asyncio.sleep(1)
+    if df_raw is None or df_raw.empty or len(df_raw) < 60:
+        return {"error": "資料不足，請確認股票代碼是否正確"}
+
+    df     = df_raw.reset_index()
+    closes = df["Close"].values.astype(float)
+    highs  = df["High"].values.astype(float)
+    lows   = df["Low"].values.astype(float)
+    vols   = df["Volume"].values.astype(float)
+    n      = len(closes)
+    c      = closes[-1]
+
+    s = pd.Series(closes)
+    def _ma(w): return round(float(s.rolling(w, min_periods=w).mean().iloc[-1]), 2) if n >= w else None
+
+    ma20  = _ma(20);  ma50  = _ma(50)
+    ma150 = _ma(150); ma200 = _ma(200)
+    ma200_20ago = float(s.rolling(200).mean().iloc[-21]) if n >= 221 else None
+
+    h52 = float(pd.Series(highs).rolling(252, min_periods=min(60,n)).max().iloc[-1])
+    l52 = float(pd.Series(lows ).rolling(252, min_periods=min(60,n)).min().iloc[-1])
+
+    # ── Trend Template 8 條件 ──
+    conds = [
+        ("收盤 > MA150",           bool(ma150 and c > ma150)),
+        ("收盤 > MA200",           bool(ma200 and c > ma200)),
+        ("MA150 > MA200",          bool(ma150 and ma200 and ma150 > ma200)),
+        ("MA200 近20日向上",       bool(ma200 and ma200_20ago and ma200 > ma200_20ago)),
+        ("MA50 > MA150 且 MA200",  bool(ma50 and ma150 and ma200 and ma50 > ma150 and ma50 > ma200)),
+        ("收盤 > MA50",            bool(ma50 and c > ma50)),
+        ("距52週低點 ≥ +30%",      c >= l52 * 1.30),
+        ("距52週高點 75% 以內",    c >= h52 * 0.75),
+    ]
+    trend_score = sum(1 for _, v in conds if v)
+
+    # ── VCP ──
+    pullbacks = _find_pullback_sequence(highs, lows, vols, lookback=100)
+
+    # ── 量能 ──
+    avg_vol20 = float(pd.Series(vols).rolling(20, min_periods=5).mean().iloc[-1])
+    vol_ratio = round(float(vols[-1]) / avg_vol20, 2) if avg_vol20 > 0 else 1.0
+
+    # ── 樞紐價 ──
+    pivot_price = None
+    dist_to_pivot = None
+    if pullbacks:
+        pivot_price   = round(float(pullbacks[-1]["peak"]) * 1.005, 1)
+        dist_to_pivot = round((pivot_price - c) / c * 100, 1)
+
+    # ── 停損 / 目標 ──
+    if pullbacks:
+        swing_low       = float(pullbacks[-1]["trough"])
+        stop_loss_price = round(min(swing_low * 0.99, c * 0.92), 1)
+    else:
+        stop_loss_price = round(c * 0.92, 1)
+    risk_pct     = round((c - stop_loss_price) / c * 100, 1)
+    target_price = round(c * 1.20, 1)
+    rr_ratio     = round(20.0 / risk_pct, 1) if risk_pct > 0 else 0
+
+    # ── RS vs 0050 ──
+    rs_score = None
+    try:
+        bench_raw = await loop.run_in_executor(
+            executor,
+            lambda: yf.Ticker("0050.TW").history(period="1y", interval="1d", auto_adjust=True)
+        )
+        if bench_raw is not None and not bench_raw.empty:
+            bc = bench_raw["Close"].values.astype(float)
+            def _p(arr, d):
+                d2 = min(d, len(arr)-1)
+                return (arr[-1]/arr[-d2]-1)*100 if d2 > 0 else 0
+            rs_score = round(
+                0.4*(_p(closes,63)-_p(bc,63)) +
+                0.3*(_p(closes,126)-_p(bc,126)) +
+                0.3*(_p(closes,252)-_p(bc,252)), 1)
+    except Exception:
+        pass
+
+    # ── 綜合建議 ──
+    if trend_score >= 6 and len(pullbacks) >= 2:
+        if dist_to_pivot is not None and dist_to_pivot < 0:
+            rec, rec_color = "已突破樞紐", "success"
+            rec_detail = f"股價已突破樞紐 {abs(dist_to_pivot):.1f}%，留意是否仍在有效追價範圍（5%內）"
+        elif dist_to_pivot is not None and dist_to_pivot <= 3:
+            rec, rec_color = "即將突破", "warning"
+            rec_detail = f"股價距樞紐僅 {dist_to_pivot:.1f}%，密切關注放量突破訊號"
+        else:
+            rec, rec_color = "等待突破", "info"
+            rec_detail = f"VCP型態良好，耐心等待股價放量突破 ${pivot_price}"
+    elif trend_score >= 5:
+        rec, rec_color = "持續觀察", "info"
+        rec_detail = "趨勢條件尚可，型態尚未成熟，列入追蹤清單"
+    elif trend_score >= 3:
+        rec, rec_color = "暫時觀望", "neutral"
+        rec_detail = "趨勢條件未達 Minervini 標準，建議觀望等待更好時機"
+    else:
+        rec, rec_color = "不建議進場", "danger"
+        rec_detail = "趨勢偏弱，股價結構不佳，建議尋找更強勢標的"
+
+    universe = STOCK_UNIVERSE if STOCK_UNIVERSE else STOCK_LIST
+    return {
+        "symbol":     symbol,
+        "name":       universe.get(symbol, STOCK_LIST.get(symbol, symbol)),
+        "price":      round(c, 2),
+        "ma20":       ma20,  "ma50": ma50, "ma150": ma150, "ma200": ma200,
+        "h52":        round(h52, 2), "l52": round(l52, 2),
+        "trend_score":      trend_score,
+        "trend_conditions": [{"label": l, "pass": v} for l, v in conds],
+        "vcp_count":   len(pullbacks),
+        "vcp_pullbacks": [
+            {"peak": round(p["peak"],1), "trough": round(p["trough"],1),
+             "depth_pct": round(p["depth_pct"],1)}
+            for p in pullbacks[-4:]
+        ],
+        "pivot_price":  pivot_price,
+        "dist_to_pivot": dist_to_pivot,
+        "vol_ratio":    vol_ratio,
+        "avg_vol20":    int(avg_vol20),
+        "rs_score":     rs_score,
+        "stop_loss":    stop_loss_price,
+        "risk_pct":     risk_pct,
+        "target_price": target_price,
+        "rr_ratio":     rr_ratio,
+        "recommendation": rec,
+        "rec_color":    rec_color,
+        "rec_detail":   rec_detail,
+    }
+
+
 # ══════════════════════════════════════════════════════════
 #  回測 API
 # ══════════════════════════════════════════════════════════
