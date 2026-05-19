@@ -15,6 +15,14 @@ export default function useStockData(symbol, interval, period) {
     setError(null)
     setCandles([])   // 切換股票時立即清掉舊K線，避免顯示錯誤股票的圖
 
+    // 分鐘線在目前伺服器環境不支援，直接提示
+    const isIntraday = !['1d','1wk','1mo'].includes(interval)
+    if (isIntraday) {
+      setError('分鐘線資料目前不支援，請切換至「日」線')
+      setLoading(false)
+      return
+    }
+
     const url = `${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`;
 
     (async () => {
