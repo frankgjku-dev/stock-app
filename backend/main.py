@@ -1063,6 +1063,73 @@ async def screener_universe():
     }
 
 
+# ── TWSE 官方日線（上市，無速率限制）────────────────────────
+_PERIOD_MONTHS = {"1mo":2,"3mo":4,"6mo":7,"1y":13,"2y":25,"5y":61,"max":61}
+
+async def _fetch_twse_daily(symbol: str, months: int = 13) -> list:
+    """從 TWSE exchangeReport/STOCK_DAY 抓上市股票日線"""
+    from datetime import date as _date
+    candles: list = []
+    today = _date.today()
+    async with httpx.AsyncClient(timeout=12, headers={"User-Agent":"Mozilla/5.0"}) as cli:
+        for i in range(months - 1, -1, -1):
+            y, m = today.year, today.month - i
+            while m <= 0: m += 12; y -= 1
+            url = (f"https://www.twse.com.tw/exchangeReport/STOCK_DAY"
+                   f"?response=json&date={y}{m:02d}01&stockNo={symbol}")
+            try:
+                r = await cli.get(url)
+                j = r.json()
+                if j.get("stat") != "OK" or not j.get("data"):
+                    continue
+                for row in j["data"]:
+                    try:
+                        yy, mm, dd = row[0].split("/")
+                        t = f"{int(yy)+1911:04d}-{int(mm):02d}-{int(dd):02d}"
+                        def _n(s): return float(s.replace(",","")) if s.replace(",","").replace(".","").replace("-","").strip() else 0.0
+                        o,h,l,c = _n(row[3]),_n(row[4]),_n(row[5]),_n(row[6])
+                        if not (o and h and l and c): continue
+                        v = int(_n(row[1]) / 1000)
+                        candles.append({"time":t,"open":round(o,2),"high":round(h,2),
+                                        "low":round(l,2),"close":round(c,2),"volume":v})
+                    except Exception: continue
+            except Exception: pass
+            await asyncio.sleep(0.12)
+    return candles
+
+async def _fetch_tpex_daily(symbol: str, months: int = 13) -> list:
+    """從 TPEX 抓上櫃股票日線"""
+    from datetime import date as _date
+    candles: list = []
+    today = _date.today()
+    async with httpx.AsyncClient(timeout=12, headers={"User-Agent":"Mozilla/5.0"}) as cli:
+        for i in range(months - 1, -1, -1):
+            y, m = today.year, today.month - i
+            while m <= 0: m += 12; y -= 1
+            roc = y - 1911
+            url = (f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/"
+                   f"st43_result.php?l=zh-tw&d={roc}%2F{m:02d}&s={symbol}%2Casc%2C0")
+            try:
+                r = await cli.get(url)
+                j = r.json()
+                rows = j.get("aaData") or []
+                for row in rows:
+                    try:
+                        parts = str(row[0]).split("/")
+                        t = f"{int(parts[0])+1911:04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+                        def _n(s): return float(str(s).replace(",","")) if str(s).replace(",","").replace(".","").replace("-","").strip() else 0.0
+                        # TPEX fields: [日期,成交股數,成交金額,開盤,最高,最低,收盤,漲跌,筆數]
+                        o,h,l,c = _n(row[3]),_n(row[4]),_n(row[5]),_n(row[6])
+                        if not (o and h and l and c): continue
+                        v = int(_n(row[1]) / 1000)
+                        candles.append({"time":t,"open":round(o,2),"high":round(h,2),
+                                        "low":round(l,2),"close":round(c,2),"volume":v})
+                    except Exception: continue
+            except Exception: pass
+            await asyncio.sleep(0.12)
+    return candles
+
+
 @app.get("/api/stocks/{symbol}/candles")
 async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
     try:
@@ -1075,54 +1142,89 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         now = datetime.now()
         is_intraday = interval not in ("1d", "1wk", "1mo")
         ttl = CACHE_TTL_INTRADAY if is_intraday else CACHE_TTL_DAILY
+
+        # ── 快取命中 → 直接回傳 ──
         if cache_key in _candle_cache:
             cached_at, cached_candles = _candle_cache[cache_key]
             if now - cached_at < ttl and cached_candles:
                 return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
                         "candles": cached_candles}
 
-        loop = asyncio.get_event_loop()
-        # yfinance 在 HF 上偶爾因 rate-limit 返回空，最多重試 3 次
-        df = None
-        for attempt in range(3):
-            df = await loop.run_in_executor(
-                executor,
-                lambda: yf.Ticker(to_yf(symbol)).history(
-                    period=period, interval=interval, auto_adjust=True
+        candles: list = []
+
+        # ── 日線優先用 TWSE/TPEX 官方 API（無速率限制）──
+        if not is_intraday and interval == "1d":
+            months = _PERIOD_MONTHS.get(period, 13)
+            # 先試 TWSE（上市）
+            candles = await _fetch_twse_daily(symbol, months)
+            # 若無資料 → 試 TPEX（上櫃）
+            if not candles:
+                candles = await _fetch_tpex_daily(symbol, months)
+
+        # ── 週/月線或分鐘線 → 用 yfinance ──
+        if not candles:
+            loop = asyncio.get_event_loop()
+            df = None
+            for attempt in range(3):
+                df = await loop.run_in_executor(
+                    executor,
+                    lambda: yf.Ticker(to_yf(symbol)).history(
+                        period=period, interval=interval, auto_adjust=True
+                    )
                 )
-            )
-            if not df.empty:
-                break
-            if attempt < 2:
-                await asyncio.sleep(1.5)
-        if df is None or df.empty:
+                if df is not None and not df.empty:
+                    break
+                if attempt < 2:
+                    await asyncio.sleep(2)
+
+            if df is None or df.empty:
+                # ── yfinance 失敗 → 降級回傳過期快取（stale）──
+                if cache_key in _candle_cache and _candle_cache[cache_key][1]:
+                    _, stale = _candle_cache[cache_key]
+                    return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
+                            "candles": stale, "stale": True}
+                return {"symbol": symbol, "candles": [], "error": "No data"}
+
+            df = df.reset_index()
+            for _, row in df.iterrows():
+                dt = row.get("Datetime") or row.get("Date")
+                if dt is None: continue
+                if is_intraday:
+                    if hasattr(dt, "tzinfo") and dt.tzinfo:
+                        dt = dt.astimezone(TAIWAN_TZ)
+                    time_val = int(pd.Timestamp(dt).timestamp())
+                else:
+                    time_val = str(dt)[:10] if not hasattr(dt, "date") else str(dt.date())
+                try:
+                    cols = {c.lower(): c for c in df.columns}
+                    o = float(row[cols.get("open","Open")])
+                    h = float(row[cols.get("high","High")])
+                    l = float(row[cols.get("low","Low")])
+                    c = float(row[cols.get("close","Close")])
+                    if any(pd.isna(x) for x in (o,h,l,c)): continue
+                    v_raw = row.get(cols.get("volume","Volume"), 0)
+                    v = int(v_raw) if not pd.isna(v_raw) else 0
+                    candles.append({"time":time_val,"open":round(o,2),"high":round(h,2),
+                                    "low":round(l,2),"close":round(c,2),"volume":v})
+                except Exception: continue
+
+        if not candles:
+            # 最後降級
+            if cache_key in _candle_cache and _candle_cache[cache_key][1]:
+                _, stale = _candle_cache[cache_key]
+                return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
+                        "candles": stale, "stale": True}
             return {"symbol": symbol, "candles": [], "error": "No data"}
-
-        df = df.reset_index()
-        candles = []
-        is_intraday = interval not in ("1d", "1wk", "1mo")
-
-        for _, row in df.iterrows():
-            dt = row.get("Datetime") or row.get("Date")
-            if dt is None:
-                continue
-            if is_intraday:
-                if hasattr(dt, "tzinfo") and dt.tzinfo:
-                    dt = dt.astimezone(TAIWAN_TZ)
-                time_val = int(pd.Timestamp(dt).timestamp())
-            else:
-                time_val = str(dt)[:10] if not hasattr(dt, "date") else str(dt.date())
-
-            o, h, l, c = (float(row[k]) for k in ("Open", "High", "Low", "Close"))
-            if any(pd.isna(x) for x in (o, h, l, c)):
-                continue
-            v = int(row["Volume"]) if not pd.isna(row.get("Volume", float("nan"))) else 0
-            candles.append({"time": time_val, "open": round(o,2), "high": round(h,2),
-                            "low": round(l,2), "close": round(c,2), "volume": v})
 
         _candle_cache[cache_key] = (now, candles)
         return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol), "candles": candles}
     except Exception as e:
+        # 任何例外都嘗試返回舊快取
+        cache_key = f"{symbol}:{interval}:{period}"
+        if cache_key in _candle_cache and _candle_cache[cache_key][1]:
+            _, stale = _candle_cache[cache_key]
+            return {"symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
+                    "candles": stale, "stale": True}
         return {"symbol": symbol, "candles": [], "error": str(e)}
 
 
