@@ -13,6 +13,7 @@ export default function useStockData(symbol, interval, period) {
     if (!symbol) return
     setLoading(true)
     setError(null)
+    setCandles([])   // 切換股票時立即清掉舊K線，避免顯示錯誤股票的圖
 
     const url = `${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`;
 

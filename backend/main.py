@@ -1061,10 +1061,9 @@ async def debug_sources():
     out   = {}
 
     for name, fn, args in [
-        ("stooq",       _stooq_sync,        (sym, "1mo")),
         ("yahoo_chart", _yahoo_chart_sync,   (sym, "1mo", "1d")),
+        ("finmind",     _finmind_sync,       ("2441", "1mo")),
         ("twse",        _twse_sync,          (sym, 2)),
-        ("tpex",        _tpex_sync,          ("6669", 2)),
     ]:
         t0 = _time_mod.time()
         try:
