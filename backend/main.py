@@ -10,7 +10,7 @@ import pytz
 from datetime import datetime, timedelta
 _candle_cache: dict[str, tuple[datetime, list]] = {}
 CACHE_TTL_INTRADAY = timedelta(minutes=5)    # 分鐘線：5 分鐘快取
-CACHE_TTL_DAILY    = timedelta(hours=2)      # 日線/週線/月線：2 小時快取
+CACHE_TTL_DAILY    = timedelta(hours=6)      # 日線/週線/月線：6 小時快取（減少重複請求）
 
 app = FastAPI(title="台股分析平台")
 app.add_middleware(
@@ -1149,7 +1149,7 @@ def _twse_sync(symbol: str, months: int) -> list:
                     continue
         except Exception:
             pass
-        time.sleep(0.15)
+        time.sleep(0.1)
     return candles
 
 def _tpex_sync(symbol: str, months: int) -> list:
@@ -1191,7 +1191,7 @@ def _tpex_sync(symbol: str, months: int) -> list:
                     continue
         except Exception:
             pass
-        time.sleep(0.15)
+        time.sleep(0.1)
     return candles
 
 def _stooq_sync(symbol: str, period: str = "1y") -> list:
@@ -1321,26 +1321,20 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         candles: list = []
         loop = asyncio.get_event_loop()
 
-        # ── 日線：TWSE → stooq → TPEX → Yahoo Chart ──────────────
-        if not is_intraday and interval == "1d":
-            months = _PERIOD_MONTHS.get(period, 13)
-            # 1) TWSE 官方（上市）
-            candles = await loop.run_in_executor(executor, _twse_sync, symbol, months)
-            # 2) stooq.com（完全不同資料源，CSV 格式）
-            if not candles:
-                candles = await loop.run_in_executor(executor, _stooq_sync, symbol, period)
-            # 3) TPEX（上櫃）
-            if not candles:
-                candles = await loop.run_in_executor(executor, _tpex_sync, symbol, months)
-            # 4) Yahoo Finance Chart API 直連
-            if not candles:
-                candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
+        # ══ 取資料（每層失敗才往下，盡量少打 API）══════════════════
+        # 1) stooq.com — 單一請求，最快，全球可達
+        candles = await loop.run_in_executor(executor, _stooq_sync, symbol, period)
 
-        # ── 週/月線或分鐘線：stooq → Yahoo Chart → yfinance ───────
-        if not candles:
-            candles = await loop.run_in_executor(executor, _stooq_sync, symbol, period)
+        # 2) Yahoo Finance Chart API 直連（2 次請求）
         if not candles:
             candles = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, period, interval)
+
+        # 3) 日線才用 TWSE / TPEX（各 13 次請求，較慢）
+        if not candles and not is_intraday and interval == "1d":
+            months = _PERIOD_MONTHS.get(period, 13)
+            candles = await loop.run_in_executor(executor, _twse_sync, symbol, months)
+            if not candles:
+                candles = await loop.run_in_executor(executor, _tpex_sync, symbol, months)
 
         # ── 最後：yfinance 套件 ────────────────────────────────────
         if not candles:
@@ -1852,14 +1846,14 @@ async def analyze_stock(symbol: str):
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 1. 取資料：TWSE → stooq → TPEX → Yahoo Chart ─────────
-        raw: list = await loop.run_in_executor(executor, _twse_sync, symbol, 14)
-        if not raw:
-            raw = await loop.run_in_executor(executor, _stooq_sync, symbol, "1y")
-        if not raw:
-            raw = await loop.run_in_executor(executor, _tpex_sync, symbol, 14)
+        # ── 1. 取資料：stooq → Yahoo Chart → TWSE → TPEX ─────────
+        raw: list = await loop.run_in_executor(executor, _stooq_sync, symbol, "1y")
         if not raw:
             raw = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
+        if not raw:
+            raw = await loop.run_in_executor(executor, _twse_sync, symbol, 14)
+        if not raw:
+            raw = await loop.run_in_executor(executor, _tpex_sync, symbol, 14)
         if len(raw) < 60:
             return {"error": "資料不足，請確認股票代碼是否正確"}
 
@@ -1944,11 +1938,11 @@ async def analyze_stock(symbol: str):
         # ── 8. RS vs 0050 ───────────────────────────────────────────
         rs_score = None
         try:
-            bc_raw = await loop.run_in_executor(executor, _twse_sync, "0050", 14)
-            if not bc_raw:
-                bc_raw = await loop.run_in_executor(executor, _stooq_sync, "0050", "1y")
+            bc_raw = await loop.run_in_executor(executor, _stooq_sync, "0050", "1y")
             if not bc_raw:
                 bc_raw = await loop.run_in_executor(executor, _yahoo_chart_sync, "0050", "1y", "1d")
+            if not bc_raw:
+                bc_raw = await loop.run_in_executor(executor, _twse_sync, "0050", 14)
             if len(bc_raw) >= 20:
                 bc_raw.sort(key=lambda x: x["time"])
                 closes_arr = np.array([r["close"] for r in raw],    dtype=float)
