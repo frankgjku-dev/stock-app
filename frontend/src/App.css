@@ -1609,8 +1609,13 @@ body {
 .analysis-search-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 22px; }
 .analysis-title { font-size: 17px; font-weight: 700; color: var(--text-1); margin-bottom: 12px; }
 .analysis-search-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
-.analysis-input { background: var(--surface-2); border: 1px solid var(--border-md); border-radius: var(--r-md); padding: 8px 14px; color: var(--text-1); font-size: 14px; width: 200px; outline: none; }
+.analysis-input { background: var(--surface-2); border: 1px solid var(--border-md); border-radius: var(--r-md); padding: 8px 120px 8px 14px; color: var(--text-1); font-size: 14px; width: 100%; min-width: 220px; outline: none; box-sizing: border-box; }
 .analysis-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.analysis-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border-md); border-radius: var(--r-md); box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 200; overflow: hidden; }
+.analysis-dropdown-item { display: flex; gap: 10px; align-items: center; padding: 8px 14px; cursor: pointer; transition: background var(--trans); }
+.analysis-dropdown-item:hover { background: var(--surface-2); }
+.adrop-sym { font-weight: 700; color: var(--accent); font-size: 13px; min-width: 50px; }
+.adrop-name { font-size: 12px; color: var(--text-2); }
 .analysis-btn { background: var(--accent); color: #fff; border: none; border-radius: var(--r-md); padding: 8px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity var(--trans); }
 .analysis-btn:disabled { opacity: .55; cursor: default; }
 .analysis-desc { font-size: 11px; color: var(--text-3); }

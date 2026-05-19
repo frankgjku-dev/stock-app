@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../config'
 
 const REC_STYLES = {
@@ -25,15 +25,74 @@ function ScoreBar({ score, total = 8 }) {
 }
 
 export default function StockAnalysis({ currentSymbol, onSelectStock }) {
-  const [sym,     setSym]     = useState(currentSymbol || '')
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState(null)
+  const [sym,        setSym]        = useState(currentSymbol || '')
+  const [data,       setData]       = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState(null)
 
-  async function analyze() {
-    const s = sym.trim()
+  // ── Autocomplete state ──
+  const [stockList,  setStockList]  = useState({})   // { symbol: name }
+  const [suggestions, setSuggestions] = useState([]) // filtered list
+  const [showDrop,   setShowDrop]   = useState(false)
+  const dropRef = useRef(null)
+
+  // Load stock list once
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stocks/list`)
+      .then(r => r.json())
+      .then(d => {
+        // backend returns [{symbol, name}] array
+        if (Array.isArray(d)) {
+          const map = {}
+          d.forEach(item => { map[item.symbol] = item.name })
+          setStockList(map)
+        } else {
+          setStockList(d)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e) {
+      if (dropRef.current && !dropRef.current.contains(e.target)) {
+        setShowDrop(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  function handleInput(val) {
+    setSym(val)
+    if (val.trim().length === 0) {
+      setSuggestions([])
+      setShowDrop(false)
+      return
+    }
+    const q = val.trim().toLowerCase()
+    const filtered = Object.entries(stockList)
+      .filter(([sym, name]) =>
+        sym.toLowerCase().startsWith(q) ||
+        (name && name.toLowerCase().includes(q))
+      )
+      .slice(0, 8)
+    setSuggestions(filtered)
+    setShowDrop(filtered.length > 0)
+  }
+
+  function selectSuggestion(symbol) {
+    setSym(symbol)
+    setShowDrop(false)
+    setSuggestions([])
+  }
+
+  async function analyze(overrideSym) {
+    const s = (overrideSym || sym).trim()
     if (!s) return
     setLoading(true); setError(null); setData(null)
+    setShowDrop(false)
     try {
       const res  = await fetch(`${API_BASE}/api/stocks/${s}/analyze`)
       const json = await res.json()
@@ -53,17 +112,48 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
       {/* ── 搜尋列 ── */}
       <div className="analysis-search-bar">
         <div className="analysis-title">🔍 個股智能分析</div>
-        <div className="analysis-search-row">
-          <input
-            className="analysis-input"
-            placeholder="輸入股票代碼，如 2330"
-            value={sym}
-            onChange={e => setSym(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && analyze()}
-          />
+        <div className="analysis-search-row" ref={dropRef} style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              className="analysis-input"
+              placeholder="輸入股票代碼或名稱，如 2330 / 台積電"
+              value={sym}
+              onChange={e => handleInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { analyze(); setShowDrop(false) }
+                if (e.key === 'Escape') setShowDrop(false)
+              }}
+              onFocus={() => suggestions.length > 0 && setShowDrop(true)}
+              autoComplete="off"
+            />
+            {/* 股票名稱提示 */}
+            {sym && stockList[sym.trim()] && (
+              <span style={{
+                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                fontSize: 12, color: 'var(--text-3)', pointerEvents: 'none',
+              }}>
+                {stockList[sym.trim()]}
+              </span>
+            )}
+            {/* Dropdown */}
+            {showDrop && (
+              <div className="analysis-dropdown">
+                {suggestions.map(([s, name]) => (
+                  <div
+                    key={s}
+                    className="analysis-dropdown-item"
+                    onMouseDown={() => selectSuggestion(s)}
+                  >
+                    <span className="adrop-sym">{s}</span>
+                    <span className="adrop-name">{name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             className="analysis-btn"
-            onClick={analyze}
+            onClick={() => analyze()}
             disabled={loading || !sym.trim()}
           >
             {loading ? '分析中…' : '開始分析'}
