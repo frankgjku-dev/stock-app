@@ -87,12 +87,21 @@ export default function App() {
       .select('watchlist, holdings, journal, drawings, alerts')
       .eq('id', uid)
       .single()
-    if (error || !data) return
+    if (error) {
+      // PGRST116 = 找不到資料列（新用戶，正常）；其他才是真正錯誤
+      if (error.code !== 'PGRST116') {
+        console.error('[Supabase loadFromCloud error]', error.code, error.message, error.details)
+        setSyncing('error')
+      }
+      return
+    }
+    if (!data) return
     if (data.watchlist) { setWatchlist(data.watchlist); localStorage.setItem('tw_watchlist', JSON.stringify(data.watchlist)) }
     if (data.holdings)  { setHoldings(data.holdings);   localStorage.setItem('tw_holdings',  JSON.stringify(data.holdings)) }
     if (data.journal)   { setJournal(data.journal);     localStorage.setItem('tw_journal',   JSON.stringify(data.journal)) }
     if (data.drawings)  { setDrawings(data.drawings);   localStorage.setItem('tw_drawings',  JSON.stringify(data.drawings)) }
     if (data.alerts)    { setAlerts(data.alerts);        localStorage.setItem('tw_alerts',    JSON.stringify(data.alerts)) }
+    setSyncing(false)
   }
 
   function scheduleSync() {
@@ -100,7 +109,7 @@ export default function App() {
     syncTimer.current = setTimeout(async () => {
       if (!user) return
       setSyncing(true)
-      await supabase.from('user_data').upsert({
+      const { error } = await supabase.from('user_data').upsert({
         id: user.id,
         watchlist: watchlistRef.current,
         holdings:  holdingsRef.current,
@@ -109,7 +118,12 @@ export default function App() {
         alerts:    alertsRef.current,
         updated_at: new Date().toISOString(),
       })
-      setSyncing(false)
+      if (error) {
+        console.error('[Supabase scheduleSync error]', error.code, error.message, error.details)
+        setSyncing('error')
+      } else {
+        setSyncing(false)
+      }
     }, 1500)
   }
 
@@ -286,7 +300,8 @@ export default function App() {
         {user ? (
           <>
             <span className="sync-user">☁ {user.email}</span>
-            {syncing && <span className="sync-dot">同步中…</span>}
+            {syncing === true    && <span className="sync-dot">同步中…</span>}
+            {syncing === 'error' && <span className="sync-dot" style={{color:'#c85a50'}} title="請開啟 F12 Console 查看詳細錯誤">⚠️ 同步失敗</span>}
             <button className="sync-logout" onClick={handleLogout}>登出</button>
           </>
         ) : (
