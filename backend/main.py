@@ -244,6 +244,11 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         base_days = int(vcp_seq[-1]["trough_idx"] - vcp_seq[0]["peak_idx"])
     base_valid = 15 <= base_days <= 65
 
+    # ── 整理期過長（>65 交易日）→ 作廢，不算有效 VCP ─────────
+    if base_days > 65:
+        vcp_seq = []; num_cont = 0; depths = []; max_depth = 0.0; last_depth = 100.0
+        base_days = 0; base_valid = False
+
     # ── 低點墊高（已在序列建構時強制執行，這裡做確認記錄）──────
     higher_lows = False
     if num_cont >= 2:
@@ -384,6 +389,17 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
         base_high  = pivot
 
     dist_piv = round((pivot - cur_close) / pivot * 100, 1) if pivot > 0 else 0.0
+
+    # ── 股價已跌離樞紐點 >15%（型態失效）→ VCP 序列作廢 ──────
+    if dist_piv > 15 and vcp_seq:
+        vcp_seq = []; num_cont = 0; depths = []; max_depth = 0.0; last_depth = 100.0
+        base_days = 0; higher_lows = False
+        # pivot 改用近 45 日高點（重新估算）
+        ph_start = max(len(h) - 45, 0)
+        ph_end   = max(len(h) - 5,  1)
+        pivot    = round(float(max(h[ph_start:ph_end])), 2) if ph_end > ph_start else cur_close
+        base_high = pivot
+        dist_piv  = round((pivot - cur_close) / pivot * 100, 1) if pivot > 0 else 0.0
 
     # ── 突破準備評分（10 分）──────────────────────────────────
     break_s = 0
