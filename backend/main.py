@@ -2030,6 +2030,14 @@ async def analyze_stock(symbol: str):
         all_pbs  = _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100)
         vcp_seq  = _best_contraction_sequence(all_pbs)
 
+        # 將 peak_idx / trough_idx 轉換為實際日期（供前端驗證）
+        _lb = min(100, len(df))
+        def _idx_to_date(idx):
+            row = len(df) - _lb + idx
+            if 0 <= row < len(df):
+                return str(df["Date"].iloc[row])[:10]
+            return ""
+
         pivot_price   = vcp.get("pivot") or None
         dist_to_pivot = vcp.get("dist_pivot")   # 距樞紐 %（>0 表示尚未突破）
         buy_status    = vcp.get("buy_status", "—")
@@ -2126,8 +2134,11 @@ async def analyze_stock(symbol: str):
             "base_days":      base_days,
             "buy_status":     buy_status,
             "vcp_pullbacks":  [
-                {"peak": round(p["peak"],1), "trough": round(p["trough"],1),
-                 "depth_pct": round(p["depth_pct"],1)}
+                {"peak":       round(p["peak"],   1),
+                 "trough":     round(p["trough"], 1),
+                 "depth_pct":  round(p["depth_pct"], 1),
+                 "peak_date":  _idx_to_date(p["peak_idx"]),
+                 "trough_date":_idx_to_date(p["trough_idx"])}
                 for p in vcp_seq[-4:]
             ],
             # 價位

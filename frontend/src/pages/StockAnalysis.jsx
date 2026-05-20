@@ -262,6 +262,11 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
                       <span>${p.peak}</span>
                       <span className="down">↓{p.depth_pct}%</span>
                       <span>${p.trough}</span>
+                      {p.peak_date && (
+                        <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 4 }}>
+                          {p.peak_date.slice(5)} → {p.trough_date?.slice(5)}
+                        </span>
+                      )}
                     </div>
                   ))}
                   {/* 型態標籤 */}
