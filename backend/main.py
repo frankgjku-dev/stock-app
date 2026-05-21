@@ -214,6 +214,10 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         elif state == "below":
             if cur_l < pb_low:
                 pb_low = cur_l
+            # 跌破前低 → 本次 HL 結構失效，重置計數
+            if prev_pb_low > 0 and pb_low < prev_pb_low:
+                hl_count    = 0
+                prev_pb_low = 0.0
             if cur_c >= cur_ma5:
                 # 確認是站回的第一根：前一日收盤確實在 5MA 之下
                 first_cross = (i >= 1
@@ -239,7 +243,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                          and cur_c >= _ma20v and cur_c >= _ma60v)
                 swing_ma_ok = (swing_high >= _ma5v and swing_high >= _ma10v
                                and swing_high >= _ma20v and swing_high >= _ma60v)
-                if (first_cross and 7.0 <= pb_pct <= 14.0
+                if (first_cross and 11.0 <= pb_pct <= 20.0
                         and vol_ok and prev_hi_ok
                         and ma_ok and swing_ma_ok and hl_count >= 1):
                     entry       = True
@@ -731,17 +735,17 @@ def generate_hl5ma_recommendation(r: dict) -> dict:
     if entry_ok:
         stop = pb_low * 0.98 if pb_low else close * 0.93
         return make("buy_now", "⚡ 站回買點", "high",
-                    f"站回均線且收盤突破前日高點，回檔深度 {pb_pct:.1f}%（符合 7-14% 標準），"
+                    f"站回均線且收盤突破前日高點，回檔深度 {pb_pct:.1f}%（符合 11-20% 標準），"
                     f"放量確認，站上 5/10/20/60MA。RS {rs:.0f}。進場：{close}，停損：回檔低點 -2%（{round(stop,2)}）。",
                     entry=close, stop=stop)
 
     # 回檔中
     if in_pb:
-        if 7.0 <= pb_pct <= 14.0:
-            hint    = f"⚠️ 回檔 {pb_pct:.1f}% 符合範圍（7-14%），等站回均線放量突破前日高"
+        if 11.0 <= pb_pct <= 20.0:
+            hint    = f"⚠️ 回檔 {pb_pct:.1f}% 符合範圍（11-20%），等站回均線放量突破前日高"
             urgency = "medium"
-        elif pb_pct < 7.0:
-            hint    = f"回檔尚淺（{pb_pct:.1f}%），需達 7% 以上"
+        elif pb_pct < 11.0:
+            hint    = f"回檔尚淺（{pb_pct:.1f}%），需達 11% 以上"
             urgency = "low"
         else:
             hint    = f"回檔過深（{pb_pct:.1f}%），已超出 14% 標準，等次機會"
@@ -2609,6 +2613,10 @@ async def run_backtest(
                 elif hl_state == "below":
                     if lo < pb_low:
                         pb_low = lo
+                    # 跌破前低 → 本次 HL 結構失效，重置計數
+                    if prev_pb_low > 0 and pb_low < prev_pb_low:
+                        hl_count    = 0
+                        prev_pb_low = 0.0
                     if c >= ma5:
                         # 站回的第一根：前一日收盤在 5MA 之下
                         _prev_ma5 = float(ma5_a_loc[i - 1]) if i >= 1 and not np.isnan(ma5_a_loc[i - 1]) else c
@@ -2637,7 +2645,7 @@ async def run_backtest(
                                        and swing_high >= _m5 and swing_high >= _m10
                                        and swing_high >= _m20 and swing_high >= _m60)
                         if (not in_trade and first_cross and trend_ok(i)
-                                and 7.0 <= pb_pct <= 14.0
+                                and 11.0 <= pb_pct <= 20.0
                                 and vol_ok and prev_hi_ok
                                 and ma_ok and swing_ma_ok and hl_count >= 1):
                             in_trade    = True
