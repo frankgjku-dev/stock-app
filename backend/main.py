@@ -658,6 +658,7 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
     rs_raw  = _calc_rs_raw(close)
     vcp     = detect_vcp(df, c, m50, high52)
     pp      = detect_pocket_pivot(df)
+    hl5ma   = detect_hl5ma(df)
 
     # ── 追加趨勢分 25 分到 vcp.score100 ─────────────────────────
     trend_score = (
@@ -689,6 +690,13 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
         "passed":         passed,
         "vcp":            vcp,
         "pocket_pivot":   pp,
+        "hl5ma":          {
+            "valid":   hl5ma["valid"],
+            "count":   hl5ma["hl_count"],
+            "entry":   hl5ma["entry"],
+            "prev_hl": hl5ma["prev_hl"],
+            "ma5":     hl5ma["ma5"],
+        },
     }
 
 

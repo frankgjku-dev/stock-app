@@ -54,6 +54,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   const [vcpOnly,   setVcpOnly]   = useState(false)
   const [minVcp,    setMinVcp]    = useState(3)
   const [ppOnly,    setPpOnly]    = useState(false)
+  const [hl5maOnly, setHl5maOnly] = useState(false)
   const [favOnly,   setFavOnly]   = useState(false)
   const [urgencyFilter, setUrgencyFilter] = useState('all')  // all / high / medium
   const [sortKey,   setSortKey]   = useState('rs_rating')
@@ -121,6 +122,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
     if (r.passed < minPassed) return false
     if (vcpOnly && (r.vcp?.score ?? 0) < minVcp) return false
     if (ppOnly  && !r.pocket_pivot) return false
+    if (hl5maOnly && !r.hl5ma?.valid) return false
     if (favOnly && !allFavSymbols.includes(r.symbol)) return false
     return true
   })
@@ -256,6 +258,10 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
         <label className="filter-label vcp-toggle">
           <input type="checkbox" checked={ppOnly} onChange={e => setPpOnly(e.target.checked)} />
           Pocket Pivot
+        </label>
+        <label className="filter-label vcp-toggle">
+          <input type="checkbox" checked={hl5maOnly} onChange={e => setHl5maOnly(e.target.checked)} />
+          📈 HL 5MA
         </label>
 
         {/* 建議優先度篩選 */}
@@ -687,6 +693,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                 <SortTh k="vcp"       label="VCP分" />
                 <th>樞紐/買點</th>
                 <th>PP</th>
+                <th>HL5MA</th>
                 <SortTh k="from_high" label="距高%" />
                 <SortTh k="from_ma50" label="距MA50%" />
                 <SortTh k="urgency"   label="建議" />
@@ -800,6 +807,24 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         {row.pocket_pivot
                           ? <span className="pp-badge">🚀 PP</span>
                           : <span style={{ color:'var(--text-3)' }}>—</span>}
+                      </td>
+                      {/* HL5MA 欄 */}
+                      <td style={{ fontSize:11 }}>
+                        {row.hl5ma?.valid ? (
+                          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                            <span style={{
+                              color: row.hl5ma.entry ? '#26a69a' : '#6aaa9a',
+                              fontWeight: row.hl5ma.entry ? 700 : 400,
+                            }}>
+                              {row.hl5ma.entry ? '⚡ 買點' : `📈 ${row.hl5ma.count}HL`}
+                            </span>
+                            {row.hl5ma.prev_hl > 0 && (
+                              <span style={{ fontSize:10, color:'var(--text-3)' }}>
+                                HL ${row.hl5ma.prev_hl}
+                              </span>
+                            )}
+                          </div>
+                        ) : <span style={{ color:'var(--text-3)' }}>—</span>}
                       </td>
                       <td className={row.from_high >= -10 ? 'up' : ''}>{row.from_high}%</td>
                       <td>
