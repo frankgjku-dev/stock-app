@@ -266,7 +266,15 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 if prev_hl_price is None or new_hl > prev_hl_price * 0.995:
                     avg_vol_2  = float(np.mean(v[max(0, i - 2): i])) if i >= 2 else cur_vol
                     vol_ok     = cur_vol > avg_vol_2
-                    ma5_rising = bool(c[i] > c[i - 5]) if i >= 5 else False
+                    # 5MA 需連續 3 根上升才算真正上彎（單根大陽線不算）
+                    ma5_rising = (
+                        i >= 3
+                        and not np.isnan(ma5[i]) and not np.isnan(ma5[i-1])
+                        and not np.isnan(ma5[i-2]) and not np.isnan(ma5[i-3])
+                        and float(ma5[i]) > float(ma5[i-1])
+                        and float(ma5[i-1]) > float(ma5[i-2])
+                        and float(ma5[i-2]) > float(ma5[i-3])
+                    )
                     hl_points.append({
                         "price":       round(new_hl,       2),
                         "date":        str(dates[i])[:10],
@@ -292,7 +300,14 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
             entry = True
 
     cur_ma5_val    = float(ma5[-1]) if not np.isnan(ma5[-1]) else 0.0
-    ma5_rising_now = bool(c[-1] > c[-6]) if len(c) >= 6 else False
+    # 5MA 連續 3 根上升才算「現在上彎」
+    ma5_rising_now = (
+        len(ma5) >= 4
+        and not any(np.isnan(ma5[k]) for k in range(-4, 0))
+        and float(ma5[-1]) > float(ma5[-2])
+        and float(ma5[-2]) > float(ma5[-3])
+        and float(ma5[-3]) > float(ma5[-4])
+    )
 
     return {
         "valid":         len(hl_points) >= 2,
@@ -2680,8 +2695,16 @@ async def run_backtest(
                         recovery_pb_low = 0.0; prev_swing_high = 0.0
                         # 進場判斷：≥2 HL + trend_ok + 量 + 5MA 扣抵向上
                         if not in_trade and hl_count >= 2 and trend_ok(i):
-                            avg_vol     = float(np.mean(vols[max(0, i-2):i])) if i >= 2 else vol
-                            ma5_rising  = bool(closes[i] > closes[i-5]) if i >= 5 else False
+                            avg_vol    = float(np.mean(vols[max(0, i-2):i])) if i >= 2 else vol
+                            # 5MA 連續 3 根上升才算上彎
+                            ma5_rising = (
+                                i >= 3
+                                and not np.isnan(ma5_a_loc[i])   and not np.isnan(ma5_a_loc[i-1])
+                                and not np.isnan(ma5_a_loc[i-2]) and not np.isnan(ma5_a_loc[i-3])
+                                and float(ma5_a_loc[i])   > float(ma5_a_loc[i-1])
+                                and float(ma5_a_loc[i-1]) > float(ma5_a_loc[i-2])
+                                and float(ma5_a_loc[i-2]) > float(ma5_a_loc[i-3])
+                            )
                             if vol >= avg_vol and ma5_rising:
                                 in_trade = True; entry_price = c
                                 entry_date = dates[i]; entry_idx = i; entry_ref = prev_hl_p
