@@ -142,48 +142,43 @@ def _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100, window=5, min_dep
 
 def detect_hl5ma(df: pd.DataFrame) -> dict:
     """
-    Higher Low 5MA Strategy 偵測（獨立策略，不與 VCP 混合）
-
-    核心邏輯（狀態機）：
+    Higher Low 5MA Strategy 偵測 v2（3 狀態機）
     ─────────────────────────────────────────────────────────
-    ABOVE_MA5 → 收盤跌破 5MA → BELOW_MA5
-      • 期間持續記錄最低點（用 Low 而非 Close）
-      • 若最低點跌破前一個 HL → 結構失效，全部重置
-    BELOW_MA5 → 收盤站回 5MA（且回檔 ≥2 根 K 棒）：
-      • 計算當次回檔最低點
-      • 若最低點 > 前一個 HL → 新 HL 確認
-      • 當日量 > 前 2 日均量 → 觸發買點
+    狀態：ABOVE → BELOW → RECOVERY → ABOVE（確認）
+
+    ABOVE：追蹤「上升段最高點 swing_high」
+      收盤跌破 5MA → 記錄 prev_swing_high，進入 BELOW
+
+    BELOW：追蹤「回檔最低 Low、K 棒數」
+      • 最低點跌破前 HL → 全部重置
+      • 收盤站回 5MA（≥2 根）→ 進入 RECOVERY，暫存 pullback_low
+
+    RECOVERY：等待「收盤突破 prev_swing_high」確認 HL
+      • 收盤 > prev_swing_high → HL 正式確認，回到 ABOVE
+      • 收盤再次跌破 5MA → HL 作廢，回到 BELOW（不計入）
 
     進場條件（同時滿足）：
-      1. 收盤站上 5MA（方案 A 保守）
-      2. 當日量 > 前 2 日均量
-      3. 最新 HL > 前一 HL（連續 ≥2 個 HL）
-      4. 回檔期間未跌破前一 HL
-
-    失效條件：
-      • 回檔低點跌破前一 HL → 全部重置
+      1. 收盤突破前高（RECOVERY → ABOVE 的時刻）
+      2. ≥2 個已確認 HL
+      3. 量 > 前 2 日均量
+      4. 5MA 扣抵向上：close[i] > close[i-5]（今日 5MA > 昨日 5MA）
     ─────────────────────────────────────────────────────────
-    回傳 dict：
-      valid        - bool，是否有 ≥2 個有效 HL
-      hl_count     - int，連續 HL 數
-      hl_points    - list[dict]，各 HL 的 price / date / entry_price / vol_ok
-      entry        - bool，當日是否觸發買點
-      entry_price  - float，當日 5MA（進場觸發價）
-      prev_hl      - float，最近一個 HL 低點（停損參考）
-      in_pullback  - bool，當前是否在回檔中
-      pullback_low - float，當前回檔期間最低點（僅 in_pullback 時有意義）
-      ma5          - float，當日 5MA
+    回傳：
+      valid, hl_count, hl_points, entry, entry_price,
+      prev_hl, in_pullback, in_recovery, pullback_low,
+      ma5, ma5_rising, swing_high
     """
     empty = {
         "valid": False, "hl_count": 0, "hl_points": [],
         "entry": False, "entry_price": 0.0,
-        "prev_hl": 0.0, "in_pullback": False,
-        "pullback_low": 0.0, "ma5": 0.0,
+        "prev_hl": 0.0, "in_pullback": False, "in_recovery": False,
+        "pullback_low": 0.0, "ma5": 0.0, "ma5_rising": False, "swing_high": 0.0,
     }
     if len(df) < 20:
         return empty
 
     c   = df["Close"].values.astype(float)
+    hi  = df["High"].values.astype(float)
     lo  = df["Low"].values.astype(float)
     v   = df["Volume"].values.astype(float)
     n   = len(c)
@@ -194,84 +189,126 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
     ma5 = pd.Series(c).rolling(5, min_periods=5).mean().values
 
     # ── 狀態機變數 ──────────────────────────────────────────
-    hl_points      = []   # 已確認的 HL 列表
-    prev_hl_price  = None # 前一個確認的 HL 價格
-    in_pullback    = False
-    pullback_low   = None
-    pullback_bars  = 0
+    state            = "above"   # "above" | "below" | "recovery"
+    swing_high       = 0.0       # 當前上升段 / 確認期的最高 High
+    prev_swing_high  = 0.0       # 前段高點（RECOVERY 期間需突破）
+    pb_low           = None      # 回檔最低 Low
+    pb_bars          = 0         # 回檔 K 棒數
+    recovery_pb_low  = None      # 進入 RECOVERY 時暫存的 pb_low
+
+    hl_points     = []
+    prev_hl_price = None
 
     for i in range(5, n):
         if np.isnan(ma5[i]):
             continue
         cur_close = float(c[i])
+        cur_high  = float(hi[i])
         cur_low   = float(lo[i])
         cur_vol   = float(v[i])
+        cur_ma5   = float(ma5[i])
 
-        if not in_pullback:
-            # ── 跌破 5MA → 進入回檔 ──────────────────────
-            if cur_close < ma5[i]:
-                in_pullback   = True
-                pullback_bars = 1
-                pullback_low  = cur_low
-        else:
-            # ── 在回檔中 ────────────────────────────────
-            pullback_low  = min(pullback_low, cur_low)
-            pullback_bars += 1
+        # ── ABOVE：追蹤上升段高點 ────────────────────────
+        if state == "above":
+            swing_high = max(swing_high, cur_high)
+            if cur_close < cur_ma5:
+                prev_swing_high  = swing_high
+                state            = "below"
+                pb_low           = cur_low
+                pb_bars          = 1
+                swing_high       = 0.0
 
-            # 跌破前一個 HL → 結構失效，全部重置
-            if prev_hl_price is not None and pullback_low < prev_hl_price * 0.995:
+        # ── BELOW：回檔追蹤 ──────────────────────────────
+        elif state == "below":
+            pb_low   = min(pb_low, cur_low)
+            pb_bars += 1
+
+            # 跌破前 HL → 全部重置
+            if prev_hl_price is not None and pb_low < prev_hl_price * 0.995:
                 hl_points     = []
                 prev_hl_price = None
-                in_pullback   = False
-                pullback_low  = None
-                pullback_bars = 0
-                # 若當下收盤仍在 5MA 以下，重新開啟新的回檔追蹤
-                if cur_close < ma5[i]:
-                    in_pullback  = True
-                    pullback_bars = 1
-                    pullback_low  = cur_low
+                pb_low        = None
+                pb_bars       = 0
+                if cur_close < cur_ma5:
+                    state   = "below"; pb_low = cur_low; pb_bars = 1
+                else:
+                    state   = "above"; swing_high = cur_high
                 continue
 
-            # 站回 5MA 且回檔 ≥ 2 根 K 棒
-            if cur_close >= ma5[i] and pullback_bars >= 2:
-                avg_vol_2 = float(np.mean(v[max(0, i - 2):i])) if i >= 2 else cur_vol
-                vol_ok    = cur_vol > avg_vol_2
+            # 站回 5MA 且回檔 ≥2 棒 → 進入 RECOVERY
+            if cur_close >= cur_ma5 and pb_bars >= 2:
+                if prev_hl_price is None or pb_low > prev_hl_price * 0.995:
+                    recovery_pb_low = pb_low
+                    state           = "recovery"
+                    swing_high      = cur_high   # 開始追蹤確認期高點
+                else:
+                    state      = "above"         # HL 不夠高，直接放棄
+                    swing_high = cur_high
+                pb_low  = None
+                pb_bars = 0
 
-                # 新 HL 必須高於前一個 HL（或是第一個 HL）
-                if prev_hl_price is None or pullback_low > prev_hl_price * 0.995:
+        # ── RECOVERY：等待突破前高確認 HL ───────────────
+        elif state == "recovery":
+            swing_high = max(swing_high, cur_high)
+
+            # 再次跌破 5MA → HL 作廢，重新追蹤回檔
+            if cur_close < cur_ma5:
+                prev_swing_high = swing_high   # 確認期高點成為新「前高」
+                state           = "below"
+                pb_low          = cur_low
+                pb_bars         = 1
+                swing_high      = 0.0
+                recovery_pb_low = None
+
+            # 突破前高 → HL 正式確認
+            elif prev_swing_high > 0 and cur_close > prev_swing_high:
+                new_hl = recovery_pb_low if recovery_pb_low is not None else cur_low
+                if prev_hl_price is None or new_hl > prev_hl_price * 0.995:
+                    avg_vol_2  = float(np.mean(v[max(0, i - 2): i])) if i >= 2 else cur_vol
+                    vol_ok     = cur_vol > avg_vol_2
+                    ma5_rising = bool(c[i] > c[i - 5]) if i >= 5 else False
                     hl_points.append({
-                        "price":       round(pullback_low, 2),
+                        "price":       round(new_hl,       2),
                         "date":        str(dates[i])[:10],
-                        "entry_price": round(float(ma5[i]), 2),
+                        "entry_price": round(cur_close,    2),   # 突破前高時的收盤
                         "vol_ok":      vol_ok,
+                        "ma5_rising":  ma5_rising,
                     })
-                    prev_hl_price = pullback_low
+                    prev_hl_price = new_hl
 
-                # 重置回檔追蹤
-                in_pullback   = False
-                pullback_low  = None
-                pullback_bars = 0
+                state           = "above"
+                swing_high      = cur_high
+                recovery_pb_low = None
+                prev_swing_high = 0.0
+            # else: 仍在確認期，繼續等待
 
     # ── 當日是否觸發買點 ─────────────────────────────────
     entry = False
-    if hl_points:
+    if hl_points and len(hl_points) >= 2:
         last = hl_points[-1]
-        # 最後一個 HL 是今天（index = n-1 的站回動作），且量 OK，且 ≥2 個 HL
-        if last["vol_ok"] and len(hl_points) >= 2 and last["date"] == str(dates[n - 1])[:10]:
+        if (last["vol_ok"]
+                and last.get("ma5_rising", False)
+                and last["date"] == str(dates[n - 1])[:10]):
             entry = True
 
-    cur_ma5 = float(ma5[-1]) if not np.isnan(ma5[-1]) else 0.0
+    cur_ma5_val    = float(ma5[-1]) if not np.isnan(ma5[-1]) else 0.0
+    ma5_rising_now = bool(c[-1] > c[-6]) if len(c) >= 6 else False
 
     return {
-        "valid":        len(hl_points) >= 2,
-        "hl_count":     len(hl_points),
-        "hl_points":    hl_points[-5:],   # 最多回傳最近 5 個
-        "entry":        entry,
-        "entry_price":  round(cur_ma5, 2),
-        "prev_hl":      round(prev_hl_price, 2) if prev_hl_price else 0.0,
-        "in_pullback":  in_pullback,
-        "pullback_low": round(pullback_low, 2) if pullback_low else 0.0,
-        "ma5":          round(cur_ma5, 2),
+        "valid":         len(hl_points) >= 2,
+        "hl_count":      len(hl_points),
+        "hl_points":     hl_points[-5:],
+        "entry":         entry,
+        "entry_price":   round(hl_points[-1]["entry_price"], 2) if hl_points else 0.0,
+        "prev_hl":       round(prev_hl_price, 2) if prev_hl_price else 0.0,
+        "in_pullback":   state == "below",
+        "in_recovery":   state == "recovery",
+        "pullback_low":  round(pb_low, 2) if pb_low is not None else 0.0,
+        "ma5":           round(cur_ma5_val, 2),
+        "ma5_rising":    ma5_rising_now,
+        "swing_high":    round(
+            prev_swing_high if state in ("below", "recovery") else swing_high, 2
+        ),
     }
 
 
@@ -691,11 +728,16 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
         "vcp":            vcp,
         "pocket_pivot":   pp,
         "hl5ma":          {
-            "valid":   hl5ma["valid"],
-            "count":   hl5ma["hl_count"],
-            "entry":   hl5ma["entry"],
-            "prev_hl": hl5ma["prev_hl"],
-            "ma5":     hl5ma["ma5"],
+            "valid":        hl5ma["valid"],
+            "count":        hl5ma["hl_count"],
+            "entry":        hl5ma["entry"],
+            "prev_hl":      hl5ma["prev_hl"],
+            "ma5":          hl5ma["ma5"],
+            "ma5_rising":   hl5ma["ma5_rising"],
+            "in_pullback":  hl5ma["in_pullback"],
+            "in_recovery":  hl5ma["in_recovery"],
+            "swing_high":   hl5ma["swing_high"],
+            "pullback_low": hl5ma["pullback_low"],
         },
     }
 
@@ -704,10 +746,10 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
 #  選股建議引擎（Trade Setup Generator）
 # ══════════════════════════════════════════════════════════
 def generate_hl5ma_recommendation(r: dict) -> dict:
-    """HL5MA 策略專屬建議（獨立於 VCP）"""
-    hl5ma  = r.get("hl5ma") or {}
-    rs     = r.get("rs_rating", 0)
-    close  = r["close"]
+    """HL5MA 策略專屬建議（v2，含 RECOVERY 確認期）"""
+    hl5ma       = r.get("hl5ma") or {}
+    rs          = r.get("rs_rating", 0)
+    close       = r["close"]
 
     def make(action, label, urgency, reason, entry=None, stop=None):
         return {
@@ -721,34 +763,45 @@ def generate_hl5ma_recommendation(r: dict) -> dict:
 
     if not hl5ma.get("valid"):
         return make("not_ready", "📋 HL未成立", "none",
-                    f"尚未形成連續 HL 結構，RS {rs:.0f}。")
+                    f"尚未形成連續 HL 結構（需 ≥2 個 Higher Low），RS {rs:.0f}。")
 
-    count    = hl5ma.get("count", 0)
-    entry_ok = hl5ma.get("entry", False)
-    in_pb    = hl5ma.get("in_pullback", False)
-    prev_hl  = hl5ma.get("prev_hl", 0)
-    ma5      = hl5ma.get("ma5", close)
+    count        = hl5ma.get("count", 0)
+    entry_ok     = hl5ma.get("entry", False)
+    in_pb        = hl5ma.get("in_pullback", False)
+    in_recovery  = hl5ma.get("in_recovery", False)
+    prev_hl      = hl5ma.get("prev_hl", 0)
+    ma5          = hl5ma.get("ma5", close)
+    ma5_rising   = hl5ma.get("ma5_rising", False)
+    swing_high   = hl5ma.get("swing_high", 0)
 
+    # 進場：突破前高 + ≥2HL + 量OK + 5MA上彎
     if entry_ok:
         stop = prev_hl * 0.98 if prev_hl else close * 0.93
-        return make("buy_now", "⚡ HL站回5MA買點", "high",
-                    f"今日收盤站上 5MA（{ma5}）且放量，已形成 {count} 個 Higher Low，"
-                    f"RS {rs:.0f}。進場：{ma5}，停損：前HL {prev_hl}（-2%）。",
-                    entry=ma5, stop=stop)
+        return make("buy_now", "⚡ 突破前高買點", "high",
+                    f"收盤突破前段高點，{count} 個 HL 結構確認，5MA 上彎（扣抵↑）且放量，"
+                    f"RS {rs:.0f}。進場：{close}，停損：前HL {prev_hl}（-2%）。",
+                    entry=close, stop=stop)
 
+    # 確認期：已站回 5MA，等待突破前高
+    if in_recovery:
+        ma5_hint = "5MA 上彎✓" if ma5_rising else "5MA 尚未上彎⚠️"
+        return make("confirm", "🔄 確認期：等突破前高", "medium",
+                    f"已站回 5MA（{ma5}），{count} 個 HL，{ma5_hint}。"
+                    f"等收盤突破前段高點（{swing_high}）才算正式買點。",
+                    entry=swing_high if swing_high else None)
+
+    # 回檔中
     if in_pb:
         pb_low = hl5ma.get("pullback_low", 0)
-        if prev_hl and pb_low and pb_low < prev_hl:
-            return make("not_ready", "⚠️ 已跌破前HL", "none",
-                        f"回檔低點 {pb_low} 已跌破前 HL {prev_hl}，結構失效，重新等待。")
-        return make("breakout", "🔔 回檔中，等站回5MA", "medium",
+        return make("watch_pb", "🔔 回檔中，等站回5MA", "low",
                     f"第 {count} 個 HL 形成中，目前回檔低點 {pb_low}（前HL {prev_hl}）。"
-                    f"等收盤站上 5MA（{ma5}）且放量後進場。",
-                    entry=ma5)
+                    f"等收盤站回 5MA（{ma5}）後觀察是否突破前高。")
 
-    return make("watch", f"👀 {count}HL結構，等下次回踩", "low",
-                f"已形成 {count} 個 Higher Low，RS {rs:.0f}。"
-                f"等股價回踩 5MA（{ma5}）附近再找進場點。")
+    # 已確認 HL，等下次回踩
+    ma5_hint = "5MA 上彎✓" if ma5_rising else "5MA 平/下"
+    return make("watch", f"👀 {count}HL結構，等回踩", "low",
+                f"已形成 {count} 個 Higher Low，{ma5_hint}，RS {rs:.0f}。"
+                f"等股價回踩 5MA（{ma5}）並站回後再確認買點。")
 
 
 def generate_recommendation(r: dict) -> dict:
@@ -2347,9 +2400,12 @@ async def analyze_stock(symbol: str):
             "hl5ma_entry":       hl5ma["entry"],
             "hl5ma_entry_price": hl5ma["entry_price"],
             "hl5ma_prev_hl":     hl5ma["prev_hl"],
-            "hl5ma_in_pullback": hl5ma["in_pullback"],
-            "hl5ma_pullback_low":hl5ma["pullback_low"],
-            "hl5ma_ma5":         hl5ma["ma5"],
+            "hl5ma_in_pullback":  hl5ma["in_pullback"],
+            "hl5ma_in_recovery":  hl5ma["in_recovery"],
+            "hl5ma_pullback_low": hl5ma["pullback_low"],
+            "hl5ma_ma5":          hl5ma["ma5"],
+            "hl5ma_ma5_rising":   hl5ma["ma5_rising"],
+            "hl5ma_swing_high":   hl5ma["swing_high"],
             # 量能
             "vol_ratio":  vol_ratio,
             "avg_vol20":  int(avg_vol20),
@@ -2526,16 +2582,23 @@ async def run_backtest(
 
     # ── Dispatch ─────────────────────────────────────────────
     if strategy == "hl5ma":
-        # _worker_hl5ma does NOT handle trailing; patch it inline via a wrapper
         def _worker_hl5ma_full():
+            """HL5MA 3-state walkforward（與 detect_hl5ma v2 相同邏輯）"""
             ma5_a_loc = cs.rolling(5, min_periods=5).mean().values
+            # 高點序列（用於 swing_high 追蹤）
+            hs = pd.Series(highs)
 
-            hl_state   = "above"
-            pb_low     = float('inf')
-            pb_bars    = 0
-            hl_count   = 0
-            prev_hl_p  = 0.0
+            # ── 狀態機 ──────────────────────────────────
+            hl_state         = "above"
+            swing_high       = 0.0
+            prev_swing_high  = 0.0
+            pb_low           = float('inf')
+            pb_bars          = 0
+            recovery_pb_low  = 0.0
+            hl_count         = 0
+            prev_hl_p        = 0.0
 
+            # ── 持倉 ────────────────────────────────────
             equity      = 100.0
             in_trade    = False
             entry_price = 0.0
@@ -2545,55 +2608,87 @@ async def run_backtest(
 
             for i in range(LOOKBACK, len(closes)):
                 c   = float(closes[i])
+                hi  = float(highs[i])
                 lo  = float(lows[i])
                 vol = float(vols[i])
                 ma5 = float(ma5_a_loc[i]) if not np.isnan(ma5_a_loc[i]) else c
 
+                # ── 持倉管理 ───────────────────────────
                 if in_trade:
                     days_held    = i - entry_idx
                     stop_price   = entry_price * (1 - stop_pct   / 100)
                     target_price = entry_price * (1 + target_pct / 100)
                     exit_reason  = None
                     exit_price   = c
-                    if c <= stop_price:   exit_reason = "停損";      exit_price = stop_price
-                    elif c >= target_price: exit_reason = "停利"
+                    if c <= stop_price:       exit_reason = "停損"; exit_price = stop_price
+                    elif c >= target_price:   exit_reason = "停利"
                     elif days_held >= hold_days: exit_reason = "時間停損"
                     if exit_reason:
                         pnl = (exit_price - entry_price) / entry_price * 100
                         equity *= (1 + pnl / 100)
                         trades_out.append({
                             "entry_date": entry_date, "exit_date": dates[i],
-                            "entry_price": round(entry_price, 2), "exit_price": round(exit_price, 2),
-                            "pivot": round(entry_ref, 2), "pnl_pct": round(pnl, 2),
+                            "entry_price": round(entry_price, 2),
+                            "exit_price":  round(exit_price,  2),
+                            "pivot":       round(entry_ref,   2),
+                            "pnl_pct":     round(pnl, 2),
                             "exit_reason": exit_reason, "days_held": days_held,
                         })
                         in_trade = False
 
+                # ── HL5MA 狀態機 ───────────────────────
                 if hl_state == "above":
+                    swing_high = max(swing_high, hi)
                     if c < ma5:
-                        hl_state = "below"; pb_low = lo; pb_bars = 1
-                else:
+                        prev_swing_high = swing_high
+                        hl_state = "below"; pb_low = lo; pb_bars = 1; swing_high = 0.0
+
+                elif hl_state == "below":
                     if lo < pb_low: pb_low = lo
                     pb_bars += 1
+                    # 跌破前 HL → 全部重置
                     if prev_hl_p > 0 and pb_low < prev_hl_p * 0.995:
-                        hl_count = 0; prev_hl_p = 0.0; pb_bars = 0; pb_low = float('inf')
+                        hl_count = 0; prev_hl_p = 0.0
+                        pb_low = float('inf'); pb_bars = 0
                         hl_state = "below" if c < ma5 else "above"
-                        if hl_state == "below": pb_low = lo; pb_bars = 1
+                        if hl_state == "below":   pb_low = lo; pb_bars = 1
+                        else:                     swing_high = hi
                         equity_out.append({"date": dates[i], "value": round(equity, 2)})
                         continue
+                    # 站回 5MA → 進入 RECOVERY
                     if c >= ma5 and pb_bars >= 2:
-                        saved_pb_bars = pb_bars; saved_pb_low = pb_low
-                        if prev_hl_p == 0 or saved_pb_low > prev_hl_p * 0.995:
-                            hl_count += 1; prev_hl_p = saved_pb_low
-                        hl_state = "above"; pb_bars = 0; pb_low = float('inf')
+                        if prev_hl_p == 0 or pb_low > prev_hl_p * 0.995:
+                            recovery_pb_low = pb_low
+                            hl_state = "recovery"; swing_high = hi
+                        else:
+                            hl_state = "above"; swing_high = hi
+                        pb_low = float('inf'); pb_bars = 0
+
+                elif hl_state == "recovery":
+                    swing_high = max(swing_high, hi)
+                    # 再次跌破 5MA → HL 作廢
+                    if c < ma5:
+                        prev_swing_high = swing_high
+                        hl_state = "below"; pb_low = lo; pb_bars = 1; swing_high = 0.0
+                        recovery_pb_low = 0.0
+                    # 突破前高 → HL 確認
+                    elif prev_swing_high > 0 and c > prev_swing_high:
+                        new_hl = recovery_pb_low if recovery_pb_low > 0 else lo
+                        if prev_hl_p == 0 or new_hl > prev_hl_p * 0.995:
+                            hl_count += 1; prev_hl_p = new_hl
+                        hl_state = "above"; swing_high = hi
+                        recovery_pb_low = 0.0; prev_swing_high = 0.0
+                        # 進場判斷：≥2 HL + trend_ok + 量 + 5MA 扣抵向上
                         if not in_trade and hl_count >= 2 and trend_ok(i):
-                            avg_vol = float(np.mean(vols[max(0, i - 2): i])) if i >= 2 else vol
-                            if vol >= avg_vol:
+                            avg_vol     = float(np.mean(vols[max(0, i-2):i])) if i >= 2 else vol
+                            ma5_rising  = bool(closes[i] > closes[i-5]) if i >= 5 else False
+                            if vol >= avg_vol and ma5_rising:
                                 in_trade = True; entry_price = c
                                 entry_date = dates[i]; entry_idx = i; entry_ref = prev_hl_p
 
                 equity_out.append({"date": dates[i], "value": round(equity, 2)})
 
+            # 收尾平倉
             if in_trade:
                 last = float(closes[-1])
                 pnl  = (last - entry_price) / entry_price * 100

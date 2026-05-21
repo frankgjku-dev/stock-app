@@ -578,19 +578,37 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                             <span className="pc-vcp-v">{hl5.count ?? 0} 個</span>
                           </div>
 
-                          {/* 買點狀態 */}
-                          {hl5.entry && (
+                          {/* 買點 / 確認期狀態 */}
+                          {hl5.entry ? (
                             <div className="pc-vcp-chip" style={{ color:'#3a8a5a', borderColor:'#3a8a5a55' }}>
                               <span className="pc-vcp-k">狀態</span>
-                              <span className="pc-vcp-v">⚡ 站回5MA</span>
+                              <span className="pc-vcp-v">⚡ 突破前高買點</span>
+                            </div>
+                          ) : hl5.in_recovery ? (
+                            <div className="pc-vcp-chip" style={{ color:'#0288d1', borderColor:'#0288d155' }}>
+                              <span className="pc-vcp-k">狀態</span>
+                              <span className="pc-vcp-v">🔄 等突破前高</span>
+                            </div>
+                          ) : null}
+
+                          {/* 待突破前高（確認期顯示） */}
+                          {hl5.in_recovery && hl5.swing_high > 0 && (
+                            <div className="pc-vcp-chip" style={{ borderColor:'var(--accent)55' }}>
+                              <span className="pc-vcp-k">待破前高</span>
+                              <span className="pc-vcp-v" style={{ color:'var(--accent)' }}>{hl5.swing_high}</span>
                             </div>
                           )}
 
-                          {/* 5MA 價格 */}
+                          {/* 5MA + 扣抵方向 */}
                           {hl5.ma5 > 0 && (
                             <div className="pc-vcp-chip">
                               <span className="pc-vcp-k">5MA</span>
-                              <span className="pc-vcp-v">{hl5.ma5}</span>
+                              <span className="pc-vcp-v">
+                                {hl5.ma5}
+                                <span style={{ fontSize:10, marginLeft:3, color: hl5.ma5_rising ? '#26a69a' : 'var(--text-3)' }}>
+                                  {hl5.ma5_rising ? '↑' : '—'}
+                                </span>
+                              </span>
                             </div>
                           )}
 
@@ -847,20 +865,30 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         <td style={{ fontSize:11 }}>
                           {row.hl5ma?.valid ? (
                             <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                              {/* 主狀態標籤 */}
                               <span style={{
-                                color: row.hl5ma.entry ? '#26a69a' : '#6aaa9a',
-                                fontWeight: row.hl5ma.entry ? 700 : 400,
+                                color: row.hl5ma.entry        ? '#26a69a'
+                                     : row.hl5ma.in_recovery  ? '#0288d1'
+                                     : '#6aaa9a',
+                                fontWeight: (row.hl5ma.entry || row.hl5ma.in_recovery) ? 700 : 400,
                               }}>
-                                {row.hl5ma.entry ? '⚡ 買點' : `📈 ${row.hl5ma.count}HL`}
+                                {row.hl5ma.entry       ? '⚡ 買點'
+                                 : row.hl5ma.in_recovery ? `🔄 確認期`
+                                 : `📈 ${row.hl5ma.count}HL`}
+                              </span>
+                              {/* 確認期：顯示待突破前高 */}
+                              {row.hl5ma.in_recovery && row.hl5ma.swing_high > 0 && (
+                                <span style={{ fontSize:10, color:'var(--accent)' }}>
+                                  待破 {row.hl5ma.swing_high}
+                                </span>
+                              )}
+                              {/* 5MA 扣抵方向 */}
+                              <span style={{ fontSize:10, color: row.hl5ma.ma5_rising ? '#26a69a' : 'var(--text-3)' }}>
+                                5MA {row.hl5ma.ma5}{row.hl5ma.ma5_rising ? ' ↑' : ''}
                               </span>
                               {row.hl5ma.prev_hl > 0 && (
                                 <span style={{ fontSize:10, color:'var(--text-3)' }}>
-                                  前HL ${row.hl5ma.prev_hl}
-                                </span>
-                              )}
-                              {row.hl5ma.ma5 > 0 && (
-                                <span style={{ fontSize:10, color:'var(--text-3)' }}>
-                                  5MA ${row.hl5ma.ma5}
+                                  前HL {row.hl5ma.prev_hl}
                                 </span>
                               )}
                             </div>
