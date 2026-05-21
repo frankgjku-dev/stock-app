@@ -2515,6 +2515,19 @@ async def run_backtest(
             else:
                 equity_out.append({"date": dates[i], "value": round(equity, 2)})
 
+        # 收尾平倉（VCP）
+        if in_trade:
+            last = float(closes[-1])
+            pnl  = (last - entry_price) / entry_price * 100
+            equity *= (1 + pnl / 100)
+            trades_out.append({
+                "entry_date":  entry_date, "exit_date": dates[-1],
+                "entry_price": round(entry_price, 2), "exit_price": round(last, 2),
+                "pivot":       round(entry_pivot, 2), "pnl_pct":    round(pnl, 2),
+                "exit_reason": "持倉中", "days_held": len(closes) - 1 - entry_idx,
+            })
+        return equity
+
     # ── Dispatch ─────────────────────────────────────────────
     if strategy == "hl5ma":
         def _worker_hl5ma_full():
