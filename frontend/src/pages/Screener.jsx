@@ -585,6 +585,12 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                             </div>
                           ) : null}
 
+                          {/* HL 計數 */}
+                          <div className="pc-vcp-chip" style={{ color:'#26a69a', borderColor:'#26a69a55' }}>
+                            <span className="pc-vcp-k">HL數</span>
+                            <span className="pc-vcp-v">{hl5.hl_count ?? 0}</span>
+                          </div>
+
                           {/* 波段高點 */}
                           {hl5.swing_high > 0 && (
                             <div className="pc-vcp-chip" style={{ borderColor:'var(--accent)55' }}>

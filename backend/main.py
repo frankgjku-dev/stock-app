@@ -186,9 +186,11 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
     ma20 = _s.rolling(20, min_periods=20).mean().values
     ma60 = _s.rolling(60, min_periods=60).mean().values
 
-    state      = "above"
-    swing_high = 0.0
-    pb_low     = float('inf')
+    state        = "above"
+    swing_high   = 0.0
+    pb_low       = float('inf')
+    prev_pb_low  = 0.0   # 上一次回檔的最低點（用於判斷 HL）
+    hl_count     = 0     # 已確認的 Higher Low 數量
 
     entry       = False
     entry_price = 0.0
@@ -216,6 +218,13 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 # 計算回檔深度（swing_high → pb_low）
                 pb_pct = ((swing_high - pb_low) / swing_high * 100
                           if swing_high > 0 else 0.0)
+                # 判斷 Higher Low：當前低點 > 前次低點
+                is_hl = prev_pb_low > 0 and pb_low > prev_pb_low
+                if is_hl:
+                    hl_count += 1
+                # 更新前次低點
+                prev_pb_low = pb_low
+
                 avg_vol_2  = float(np.mean(v[max(0, i - 2): i])) if i >= 2 else cur_v
                 vol_ok     = cur_v > avg_vol_2
                 prev_hi_ok = cur_c > float(hi[i - 1]) if i >= 1 else False
@@ -224,7 +233,8 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                          and cur_c >= float(ma10[i])
                          and cur_c >= float(ma20[i])
                          and cur_c >= float(ma60[i]))
-                if 7.0 <= pb_pct <= 14.0 and vol_ok and prev_hi_ok and ma_ok:
+                if (7.0 <= pb_pct <= 14.0 and vol_ok and prev_hi_ok
+                        and ma_ok and hl_count >= 1):
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
@@ -251,6 +261,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         "swing_high":   round(swing_high, 2),
         "pb_low":       cur_pb_low,
         "ma5":          round(cur_ma5_val, 2),
+        "hl_count":     hl_count,
     }
 
 
@@ -678,6 +689,7 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
             "swing_high":   hl5ma["swing_high"],
             "pb_low":       hl5ma["pb_low"],
             "ma5":          hl5ma["ma5"],
+            "hl_count":     hl5ma["hl_count"],
         },
     }
 
@@ -2333,6 +2345,7 @@ async def analyze_stock(symbol: str):
             "hl5ma_swing_high":  hl5ma["swing_high"],
             "hl5ma_pb_low":      hl5ma["pb_low"],
             "hl5ma_ma5":         hl5ma["ma5"],
+            "hl5ma_hl_count":    hl5ma["hl_count"],
             # 量能
             "vol_ratio":  vol_ratio,
             "avg_vol20":  int(avg_vol20),
@@ -2535,9 +2548,11 @@ async def run_backtest(
             ma5_a_loc = cs.rolling(5, min_periods=5).mean().values
 
             # ── 狀態機 ──────────────────────────────────
-            hl_state   = "above"
-            swing_high = 0.0
-            pb_low     = float('inf')
+            hl_state     = "above"
+            swing_high   = 0.0
+            pb_low       = float('inf')
+            prev_pb_low  = 0.0
+            hl_count     = 0
 
             # ── 持倉 ────────────────────────────────────
             equity      = 100.0
@@ -2591,6 +2606,12 @@ async def run_backtest(
                         # 回檔深度（swing_high → pb_low）
                         pb_pct = ((swing_high - pb_low) / swing_high * 100
                                   if swing_high > 0 else 0.0)
+                        # Higher Low 判斷
+                        is_hl = prev_pb_low > 0 and pb_low > prev_pb_low
+                        if is_hl:
+                            hl_count += 1
+                        prev_pb_low = pb_low
+
                         avg_vol    = float(np.mean(vols[max(0, i - 2): i])) if i >= 2 else vol
                         vol_ok     = vol >= avg_vol
                         prev_hi_ok = c > float(highs[i - 1]) if i >= 1 else False
@@ -2602,7 +2623,8 @@ async def run_backtest(
                                  and c >= _m10 and c >= _m20 and c >= _m60)
                         if (not in_trade and trend_ok(i)
                                 and 7.0 <= pb_pct <= 14.0
-                                and vol_ok and prev_hi_ok and ma_ok):
+                                and vol_ok and prev_hi_ok
+                                and ma_ok and hl_count >= 1):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
