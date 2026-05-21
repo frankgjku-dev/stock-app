@@ -232,14 +232,16 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 avg_vol_2  = float(np.mean(v[max(0, i - 2): i])) if i >= 2 else cur_v
                 vol_ok     = cur_v > avg_vol_2
                 prev_hi_ok = cur_c > float(hi[i - 1]) if i >= 1 else False
-                # 站上 5/10/20/60 均線
-                ma_ok = (cur_c >= float(ma5[i])
-                         and cur_c >= float(ma10[i])
-                         and cur_c >= float(ma20[i])
-                         and cur_c >= float(ma60[i]))
+                # 站上 5/10/20/60 均線（收盤 + 波段高點均需站上）
+                _ma5v  = float(ma5[i]);  _ma10v = float(ma10[i])
+                _ma20v = float(ma20[i]); _ma60v = float(ma60[i])
+                ma_ok = (cur_c >= _ma5v and cur_c >= _ma10v
+                         and cur_c >= _ma20v and cur_c >= _ma60v)
+                swing_ma_ok = (swing_high >= _ma5v and swing_high >= _ma10v
+                               and swing_high >= _ma20v and swing_high >= _ma60v)
                 if (first_cross and 7.0 <= pb_pct <= 14.0
                         and vol_ok and prev_hi_ok
-                        and ma_ok and hl_count >= 1):
+                        and ma_ok and swing_ma_ok and hl_count >= 1):
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
@@ -2624,16 +2626,20 @@ async def run_backtest(
                         avg_vol    = float(np.mean(vols[max(0, i - 2): i])) if i >= 2 else vol
                         vol_ok     = vol >= avg_vol
                         prev_hi_ok = c > float(highs[i - 1]) if i >= 1 else False
-                        # 站上 5/10/20/60 均線
+                        # 站上 5/10/20/60 均線（收盤 + 波段高點均需站上）
+                        _m5  = float(ma5_a_loc[i]) if not np.isnan(ma5_a_loc[i]) else 0.0
                         _m10 = float(ma10_a[i]) if not np.isnan(ma10_a[i]) else 0.0
                         _m20 = float(ma20_a[i]) if not np.isnan(ma20_a[i]) else 0.0
                         _m60 = float(ma60_a[i]) if not np.isnan(ma60_a[i]) else 0.0
                         ma_ok = (_m10 > 0 and _m20 > 0 and _m60 > 0
                                  and c >= _m10 and c >= _m20 and c >= _m60)
+                        swing_ma_ok = (_m5 > 0 and _m10 > 0 and _m20 > 0 and _m60 > 0
+                                       and swing_high >= _m5 and swing_high >= _m10
+                                       and swing_high >= _m20 and swing_high >= _m60)
                         if (not in_trade and first_cross and trend_ok(i)
                                 and 7.0 <= pb_pct <= 14.0
                                 and vol_ok and prev_hi_ok
-                                and ma_ok and hl_count >= 1):
+                                and ma_ok and swing_ma_ok and hl_count >= 1):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
