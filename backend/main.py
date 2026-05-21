@@ -215,6 +215,10 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
             if cur_l < pb_low:
                 pb_low = cur_l
             if cur_c >= cur_ma5:
+                # 確認是站回的第一根：前一日收盤確實在 5MA 之下
+                first_cross = (i >= 1
+                               and not np.isnan(ma5[i - 1])
+                               and float(c[i - 1]) < float(ma5[i - 1]))
                 # 計算回檔深度（swing_high → pb_low）
                 pb_pct = ((swing_high - pb_low) / swing_high * 100
                           if swing_high > 0 else 0.0)
@@ -233,7 +237,8 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                          and cur_c >= float(ma10[i])
                          and cur_c >= float(ma20[i])
                          and cur_c >= float(ma60[i]))
-                if (7.0 <= pb_pct <= 14.0 and vol_ok and prev_hi_ok
+                if (first_cross and 7.0 <= pb_pct <= 14.0
+                        and vol_ok and prev_hi_ok
                         and ma_ok and hl_count >= 1):
                     entry       = True
                     entry_price = round(cur_c, 2)
@@ -2603,6 +2608,10 @@ async def run_backtest(
                     if lo < pb_low:
                         pb_low = lo
                     if c >= ma5:
+                        # 站回的第一根：前一日收盤在 5MA 之下
+                        _prev_ma5 = float(ma5_a_loc[i - 1]) if i >= 1 and not np.isnan(ma5_a_loc[i - 1]) else c
+                        first_cross = i >= 1 and float(closes[i - 1]) < _prev_ma5
+
                         # 回檔深度（swing_high → pb_low）
                         pb_pct = ((swing_high - pb_low) / swing_high * 100
                                   if swing_high > 0 else 0.0)
@@ -2621,7 +2630,7 @@ async def run_backtest(
                         _m60 = float(ma60_a[i]) if not np.isnan(ma60_a[i]) else 0.0
                         ma_ok = (_m10 > 0 and _m20 > 0 and _m60 > 0
                                  and c >= _m10 and c >= _m20 and c >= _m60)
-                        if (not in_trade and trend_ok(i)
+                        if (not in_trade and first_cross and trend_ok(i)
                                 and 7.0 <= pb_pct <= 14.0
                                 and vol_ok and prev_hi_ok
                                 and ma_ok and hl_count >= 1):
