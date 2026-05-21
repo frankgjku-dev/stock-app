@@ -50,6 +50,7 @@ export default function App() {
   const [symbol,     setSymbol]     = useState('2330')
   const [interval,   setInterval]   = useState('1d')
   const [period,     setPeriod]     = useState('1y')
+  const [btMarkers,  setBtMarkers]  = useState(null)  // 回測交易標記
   const [activeTool, setActiveTool] = useState('cursor')
   const [drawColor,  setDrawColor]  = useState('#b86e2a')
   const [indicators, setIndicators] = useState({
@@ -209,7 +210,38 @@ export default function App() {
   /* ── K線資料 ── */
   const { candles, quote, loading, error } = useStockData(symbol, interval, period)
 
-  const handleIntervalChange = useCallback((iv, p) => { setInterval(iv); setPeriod(p) }, [])
+  const handleIntervalChange = useCallback((iv, p) => {
+    setInterval(iv); setPeriod(p)
+    setBtMarkers(null)   // 切換週期時清除回測標記
+  }, [])
+
+  // 從回測交易紀錄跳到 K 線圖並標記買賣點
+  const handleViewTrade = useCallback((sym, trade) => {
+    // 計算需要多長的 period 才能包含買入日
+    const monthsAgo = (Date.now() - new Date(trade.entry_date + 'T00:00:00Z')) / (1000 * 60 * 60 * 24 * 30)
+    const p = monthsAgo <= 13 ? '1y' : monthsAgo <= 25 ? '2y' : monthsAgo <= 37 ? '3y' : '5y'
+
+    setSymbol(sym)
+    setInterval('1d')
+    setPeriod(p)
+    setBtMarkers([
+      {
+        time:     trade.entry_date,
+        position: 'belowBar',
+        color:    '#4caf93',
+        shape:    'arrowUp',
+        text:     `買入 ${trade.entry_price}`,
+      },
+      {
+        time:     trade.exit_date,
+        position: 'aboveBar',
+        color:    trade.pnl_pct > 0 ? '#4caf93' : '#c85a50',
+        shape:    'arrowDown',
+        text:     `${trade.exit_reason} ${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct}%`,
+      },
+    ])
+    setTab('chart')
+  }, [])
   const toggleIndicator = useCallback((key) => {
     setIndicators(prev => ({ ...prev, [key]: !prev[key] }))
   }, [])
@@ -280,7 +312,7 @@ export default function App() {
       {tab === 'chart' ? (
         <TopBar
           symbol={symbol} quote={quote} interval={interval}
-          onSymbolChange={setSymbol} onIntervalChange={handleIntervalChange}
+          onSymbolChange={(s) => { setSymbol(s); setBtMarkers(null) }} onIntervalChange={handleIntervalChange}
           watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
         />
       ) : (
@@ -345,6 +377,20 @@ export default function App() {
           <div className="chart-area">
             <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />
             <div className="chart-wrapper">
+              {btMarkers?.length > 0 && (
+                <div style={{
+                  position:'absolute', top:6, left:'50%', transform:'translateX(-50%)',
+                  zIndex:10, background:'var(--surface)', border:'1px solid var(--border)',
+                  borderRadius:20, padding:'4px 14px', fontSize:11, color:'var(--text-2)',
+                  display:'flex', alignItems:'center', gap:10, pointerEvents:'none',
+                  boxShadow:'0 2px 8px rgba(0,0,0,0.25)',
+                }}>
+                  <span>📌 回測標記：
+                    <span style={{color:'#4caf93', marginLeft:4}}>▲ {btMarkers[0]?.text}</span>
+                    <span style={{color: btMarkers[1]?.color ?? '#aaa', marginLeft:8}}>▼ {btMarkers[1]?.text}</span>
+                  </span>
+                </div>
+              )}
               {loading && <div className="loading-overlay">載入中…</div>}
               {error && !loading && (
                 <div className="loading-overlay" style={{ color:'#c85a50', fontSize:13, flexDirection:'column', gap:10 }}>
@@ -358,6 +404,7 @@ export default function App() {
                 drawingsKey={drawingsKey}
                 savedDrawings={drawings[drawingsKey]}
                 onDrawingsChange={handleDrawingsChange}
+                tradeMarkers={btMarkers}
               />
             </div>
             <Institutional symbol={symbol} />
@@ -379,7 +426,7 @@ export default function App() {
       {tab === 'intel'      && (
         <MarketIntel onSelectStock={(s) => { setSymbol(s); setTab('chart') }} />
       )}
-      {tab === 'backtest'   && <Backtest symbol={symbol} />}
+      {tab === 'backtest'   && <Backtest symbol={symbol} onViewTrade={handleViewTrade} />}
       {tab === 'calculator' && (
         <Calculator onAddHolding={addHolding} onSwitchToHoldings={() => setTab('holdings')} />
       )}

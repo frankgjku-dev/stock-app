@@ -23,6 +23,24 @@ const FIB_LEVELS = [
   { r:1,     label:'100%',  color:'#c85a50' },
 ]
 
+// 將日期字串（YYYY-MM-DD）前後移動 N 天
+function shiftDate(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+// 回測標記：自動縮放到買賣區間（前後各留 30 個交易日的緩衝）
+function _scrollToMarkers(chart, markers) {
+  if (!chart || !markers?.length) return
+  const times = markers.map(m => m.time).sort()
+  const from  = shiftDate(times[0],                    -45)
+  const to    = shiftDate(times[times.length - 1],      45)
+  setTimeout(() => {
+    try { chart.timeScale().setVisibleRange({ from, to }) } catch (_) {}
+  }, 80)
+}
+
 function calcMA(candles, period) {
   const out = []
   for (let i = period - 1; i < candles.length; i++) {
@@ -46,14 +64,17 @@ function lighten(hex) {
 export default function Chart({
   candles, indicators, activeTool, drawColor = '#b86e2a', clearRef,
   drawingsKey, savedDrawings, onDrawingsChange,
+  tradeMarkers,   // [{ time, position, color, shape, text }] — 回測買賣點標記
 }) {
   const containerRef        = useRef(null)
   const activeToolRef       = useRef(activeTool)
   const drawColorRef        = useRef(drawColor)
   const onDrawingsChangeRef = useRef(onDrawingsChange)
+  const tradeMarkersRef     = useRef(tradeMarkers)
   activeToolRef.current       = activeTool
   drawColorRef.current        = drawColor
   onDrawingsChangeRef.current = onDrawingsChange
+  tradeMarkersRef.current     = tradeMarkers
 
   const S = useRef({
     chart: null, series: {},
@@ -414,10 +435,30 @@ export default function Chart({
       color: c.close >= c.open ? `${CANDLE_UP}60` : `${CANDLE_DOWN}60`,
     })))
     MA_CONFIG.forEach(({ key, period }) => series[key]?.setData(calcMA(candles, period)))
-    chart?.timeScale().fitContent()
     // 建立 time → candle 的快速查表（Ctrl 吸附用）
     S.current.candleMap = new Map(candles.map(c => [c.time, c]))
+    // 資料載入後套用回測標記（若有）
+    const tm = tradeMarkersRef.current
+    if (tm?.length) {
+      series.candle?.setMarkers(tm)
+      _scrollToMarkers(chart, tm)
+    } else {
+      chart?.timeScale().fitContent()
+    }
   }, [candles])
+
+  /* ── 回測標記 ─────────────────────────────────── */
+  useEffect(() => {
+    const { series, chart } = S.current
+    if (!series?.candle) return
+    if (!tradeMarkers?.length) {
+      series.candle.setMarkers([])
+      chart?.timeScale().fitContent()
+      return
+    }
+    series.candle.setMarkers(tradeMarkers)
+    _scrollToMarkers(chart, tradeMarkers)
+  }, [tradeMarkers])
 
   /* ── MA 開關 ──────────────────────────────────── */
   useEffect(() => {

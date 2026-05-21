@@ -20,7 +20,7 @@ const TREND_CONDITIONS = [
   { id: 8, label: '⑧ 距52週高 75% 以內',         desc: '接近年高區間' },
 ]
 
-export default function Backtest({ symbol: defaultSymbol = '2330' }) {
+export default function Backtest({ symbol: defaultSymbol = '2330', onViewTrade }) {
   const [symbol,     setSymbol]     = useState(defaultSymbol)
   const [period,     setPeriod]     = useState('3y')
   const [stopPct,    setStopPct]    = useState(8)
@@ -256,6 +256,7 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
                       <th>持有天</th>
                       <th>損益 %</th>
                       <th>結束原因</th>
+                      <th>K 線</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -278,6 +279,17 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
                           }`}>
                             {t.exit_reason}
                           </span>
+                        </td>
+                        <td>
+                          {onViewTrade && (
+                            <button
+                              className="chart-link-btn"
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                              onClick={() => onViewTrade(symbol, t)}
+                            >
+                              看圖 →
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
