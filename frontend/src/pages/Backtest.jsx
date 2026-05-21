@@ -307,62 +307,105 @@ function StatCard({ label, value, unit = '', color }) {
 }
 
 function EquityCurve({ data, trades }) {
-  const W = 900, H = 240, PL = 52, PR = 20, PT = 16, PB = 28
+  const W = 900, H = 210, PL = 56, PR = 16, PT = 14, PB = 26
   const iW = W - PL - PR
   const iH = H - PT - PB
 
   const vals = data.map(d => d.value)
-  const minV = Math.min(...vals) * 0.995
-  const maxV = Math.max(...vals) * 1.005
-  const range = maxV - minV || 1
+  const rawMin = Math.min(...vals)
+  const rawMax = Math.max(...vals)
+  const pad    = Math.max((rawMax - rawMin) * 0.06, 1)
+  const minV   = rawMin - pad
+  const maxV   = rawMax + pad
+  const range  = maxV - minV || 1
 
-  const px = i => PL + (i / (data.length - 1)) * iW
-  const py = v => PT + iH - ((v - minV) / range) * iH
+  const px = i  => PL + (i / Math.max(data.length - 1, 1)) * iW
+  const py = v  => PT + iH - ((v - minV) / range) * iH
 
-  const linePts = data.map((d, i) => `${px(i)},${py(d.value)}`).join(' ')
+  const linePts = data.map((d, i) => `${px(i).toFixed(1)},${py(d.value).toFixed(1)}`).join(' ')
   const fillPts = `${PL},${PT + iH} ${linePts} ${W - PR},${PT + iH}`
   const baseline = py(100)
 
+  // Entry / exit markers (de-duplicate same-pixel x so they don't pile up)
   const markers = []
   trades.forEach(t => {
     const ei = data.findIndex(d => d.date === t.entry_date)
     const xi = data.findIndex(d => d.date === t.exit_date)
-    if (ei >= 0) markers.push({ i: ei, type: 'entry' })
-    if (xi >= 0) markers.push({ i: xi, type: t.pnl_pct > 0 ? 'exit_win' : 'exit_loss' })
+    if (ei >= 0) markers.push({ i: ei, type: 'entry',    v: data[ei].value })
+    if (xi >= 0) markers.push({ i: xi, type: t.pnl_pct > 0 ? 'win' : 'loss', v: data[xi].value })
   })
 
-  const yTicks = [minV, minV + range * 0.5, maxV].map(v => Math.round(v))
+  // Y-axis ticks: 5 evenly spaced, rounded nicely
+  const rawStep = (rawMax - rawMin) / 4 || 1
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const niceStep  = Math.ceil(rawStep / magnitude) * magnitude
+  const tickStart = Math.floor(rawMin / niceStep) * niceStep
+  const yTicks = []
+  for (let v = tickStart; v <= rawMax + niceStep; v += niceStep) {
+    if (v >= rawMin - pad && v <= rawMax + pad) yTicks.push(Math.round(v * 10) / 10)
+  }
 
   return (
     <div className="bt-chart-wrap">
-      <div className="bt-section-title">資產曲線（初始 = 100）</div>
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+      {/* ── 標題 + 圖例（HTML，不在 SVG 內） ── */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+        <div className="bt-section-title" style={{ marginBottom:0 }}>資產曲線（初始 = 100）</div>
+        <div style={{ display:'flex', gap:16, fontSize:11, color:'var(--text-3)' }}>
+          <span><span style={{ color:'#4caf93', marginRight:3 }}>▲</span>買入</span>
+          <span><span style={{ color:'#4caf93', marginRight:3 }}>▼</span>獲利出場</span>
+          <span><span style={{ color:'#c85a50', marginRight:3 }}>▼</span>虧損出場</span>
+        </div>
+      </div>
+
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display:'block' }}>
+        <defs>
+          <linearGradient id="eq-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#4caf93" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#4caf93" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+
+        {/* ── Y 軸格線 + 標籤 ── */}
         {yTicks.map(v => (
           <g key={v}>
-            <line x1={PL} y1={py(v)} x2={W - PR} y2={py(v)} stroke="#2a2a2a" strokeWidth="1" />
-            <text x={PL - 4} y={py(v) + 4} textAnchor="end" fill="#666" fontSize="10">{v}</text>
+            <line
+              x1={PL} y1={py(v)} x2={W - PR} y2={py(v)}
+              stroke="var(--border)" strokeWidth="1" opacity="0.45"
+            />
+            <text
+              x={PL - 6} y={py(v) + 4}
+              textAnchor="end" fill="var(--text-3)" fontSize="10"
+            >{v}</text>
           </g>
         ))}
+
+        {/* ── 100 基準線 ── */}
         {baseline >= PT && baseline <= PT + iH && (
-          <line x1={PL} y1={baseline} x2={W - PR} y2={baseline}
-            stroke="#555" strokeWidth="1" strokeDasharray="4 4" />
+          <line
+            x1={PL} y1={baseline} x2={W - PR} y2={baseline}
+            stroke="#888" strokeWidth="1" strokeDasharray="5 4" opacity="0.5"
+          />
         )}
-        <polygon points={fillPts} fill="#4caf9315" />
-        <polyline points={linePts} fill="none" stroke="#4caf93" strokeWidth="2" />
+
+        {/* ── 填色 + 曲線 ── */}
+        <polygon points={fillPts} fill="url(#eq-fill)" />
+        <polyline points={linePts} fill="none" stroke="#4caf93" strokeWidth="1.8" strokeLinejoin="round" />
+
+        {/* ── 交易標記 ── */}
         {markers.map((m, idx) => {
-          const cx = px(m.i), cy = py(data[m.i].value)
+          const cx = px(m.i), cy = py(m.v)
           if (m.type === 'entry')
-            return <polygon key={idx} points={`${cx},${cy-7} ${cx-5},${cy+3} ${cx+5},${cy+3}`} fill="#4caf93" opacity="0.9" />
-          if (m.type === 'exit_win')
-            return <polygon key={idx} points={`${cx},${cy+7} ${cx-5},${cy-3} ${cx+5},${cy-3}`} fill="#4caf93" opacity="0.7" />
-          return <polygon key={idx} points={`${cx},${cy+7} ${cx-5},${cy-3} ${cx+5},${cy-3}`} fill="#c85a50" opacity="0.7" />
+            return <polygon key={idx}
+              points={`${cx},${cy - 7} ${cx - 5},${cy + 3} ${cx + 5},${cy + 3}`}
+              fill="#4caf93" opacity="0.9" />
+          if (m.type === 'win')
+            return <polygon key={idx}
+              points={`${cx},${cy + 7} ${cx - 5},${cy - 3} ${cx + 5},${cy - 3}`}
+              fill="#4caf93" opacity="0.75" />
+          return <polygon key={idx}
+            points={`${cx},${cy + 7} ${cx - 5},${cy - 3} ${cx + 5},${cy - 3}`}
+            fill="#c85a50" opacity="0.85" />
         })}
-        <polygon points="16,12 11,22 21,22" fill="#4caf93" />
-        <text x={25} y={21} fill="#aaa" fontSize="11">買入</text>
-        <polygon points="70,22 65,12 75,12" fill="#4caf93" />
-        <text x={79} y={21} fill="#aaa" fontSize="11">獲利出場</text>
-        <polygon points="148,22 143,12 153,12" fill="#c85a50" />
-        <text x={157} y={21} fill="#aaa" fontSize="11">虧損出場</text>
       </svg>
     </div>
   )

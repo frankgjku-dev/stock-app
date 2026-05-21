@@ -5,4 +5,4 @@ export const API_BASE = `https://${host}`
 console.log('[API] 後端位址:', API_BASE)
 
 // ── 版本號（每次功能更新時遞增）──
-export const APP_VERSION = 'v2.6'
+export const APP_VERSION = 'v2.7'

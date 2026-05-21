@@ -2593,7 +2593,12 @@ async def run_backtest(
                         entry_idx   = i
                         entry_pivot = pivot
 
-            equity_out.append({"date": dates[i], "value": round(equity, 2)})
+            # 持倉中顯示浮動損益；未持倉顯示已實現
+            if in_trade:
+                upnl = (cur_close - entry_price) / entry_price * 100
+                equity_out.append({"date": dates[i], "value": round(equity * (1 + upnl / 100), 2)})
+            else:
+                equity_out.append({"date": dates[i], "value": round(equity, 2)})
 
     # ── Dispatch ─────────────────────────────────────────────
     if strategy == "hl5ma":
@@ -2668,7 +2673,11 @@ async def run_backtest(
                         hl_state = "below" if c < ma5 else "above"
                         if hl_state == "below":   pb_low = lo; pb_bars = 1
                         else:                     swing_high = hi
-                        equity_out.append({"date": dates[i], "value": round(equity, 2)})
+                        if in_trade:
+                            upnl = (c - entry_price) / entry_price * 100
+                            equity_out.append({"date": dates[i], "value": round(equity * (1 + upnl / 100), 2)})
+                        else:
+                            equity_out.append({"date": dates[i], "value": round(equity, 2)})
                         continue
                     # 站回 5MA → 進入 RECOVERY
                     if c >= ma5 and pb_bars >= 2:
@@ -2709,6 +2718,11 @@ async def run_backtest(
                                 in_trade = True; entry_price = c
                                 entry_date = dates[i]; entry_idx = i; entry_ref = prev_hl_p
 
+            # 持倉中顯示浮動損益；未持倉顯示已實現
+            if in_trade:
+                upnl = (c - entry_price) / entry_price * 100
+                equity_out.append({"date": dates[i], "value": round(equity * (1 + upnl / 100), 2)})
+            else:
                 equity_out.append({"date": dates[i], "value": round(equity, 2)})
 
             # 收尾平倉
