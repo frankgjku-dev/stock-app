@@ -690,10 +690,11 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                 <SortTh k="close"     label="收盤" />
                 <SortTh k="rs_rating" label="RS" />
                 <SortTh k="passed"    label="條件" />
-                <SortTh k="vcp"       label="VCP分" />
-                <th>樞紐/買點</th>
-                <th>PP</th>
-                <th>HL5MA</th>
+                {/* 根據篩選模式切換欄位 */}
+                {!hl5maOnly && <SortTh k="vcp" label="VCP分" />}
+                {!hl5maOnly && <th>樞紐/買點</th>}
+                {!hl5maOnly && <th>PP</th>}
+                {!vcpOnly   && <th>HL5MA</th>}
                 <SortTh k="from_high" label="距高%" />
                 <SortTh k="from_ma50" label="距MA50%" />
                 <SortTh k="urgency"   label="建議" />
@@ -735,97 +736,95 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                           {row.passed}/8
                         </span>
                       </td>
-                      {/* VCP 分數欄 */}
-                      <td>
-                        {vc
-                          ? <span className="vcp-badge" style={{ background:vc.bg, color:vc.color }}
-                              title={vcp.details?.join(' · ')}>
-                              {vcp.label || (vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱')}
-                              {vcp.score100 != null
-                                ? <strong style={{ marginLeft:4, fontSize:12 }}>{vcp.score100}</strong>
-                                : null}
-                              {vcp.contractions >= 2 && (vcp.dist_pivot == null || vcp.dist_pivot > -8)
-                                ? <span style={{ fontSize:10, marginLeft:3, opacity:0.85 }}>
-                                    {vcp.contractions}縮{vcp.vol_contracting ? '📉' : ''}
-                                    {vcp.higher_lows ? '↑' : ''}
-                                  </span>
-                                : null}
-                            </span>
-                          : <span style={{ color:'var(--text-3)' }}>—</span>}
-                      </td>
-                      {/* 基準點 + 樞紐點 + 買點狀態 */}
-                      <td className="td-pivot" style={{ fontSize:11, lineHeight:1.55 }}>
-                        {vcp.pivot ? (
-                          <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
-
-                            {/* 基準點 */}
-                            {vcp.base_high > 0 && (
-                              <div>
-                                <span style={{ fontSize:10, color:'var(--text-3)' }}>基準點　</span>
-                                <span style={{ fontWeight:600, color:'var(--text-1)' }}>{vcp.base_high}</span>
-                                {vcp.base_high_date && (
-                                  <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:4 }}>
-                                    {vcp.base_high_date}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* 樞紐點 */}
-                            <div>
-                              <span style={{ fontSize:10, color:'var(--text-3)' }}>樞紐點　</span>
-                              <span style={{ fontWeight:700, color:'var(--accent)' }}>{vcp.pivot}</span>
-                              <span style={{
-                                fontSize:10, marginLeft:4,
-                                color: vcp.dist_pivot <= 0 ? 'var(--down)' :
-                                       vcp.dist_pivot <= 3 ? '#e0a800' :
-                                       vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
-                              }}>
-                                {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
+                      {/* VCP 欄（只在非 HL5MA 模式顯示）*/}
+                      {!hl5maOnly && (
+                        <td>
+                          {vc
+                            ? <span className="vcp-badge" style={{ background:vc.bg, color:vc.color }}
+                                title={vcp.details?.join(' · ')}>
+                                {vcp.label || (vcp.score >= 4 ? 'VCP強' : vcp.score >= 3 ? 'VCP中' : 'VCP弱')}
+                                {vcp.score100 != null
+                                  ? <strong style={{ marginLeft:4, fontSize:12 }}>{vcp.score100}</strong>
+                                  : null}
+                                {vcp.contractions >= 2 && (vcp.dist_pivot == null || vcp.dist_pivot > -8)
+                                  ? <span style={{ fontSize:10, marginLeft:3, opacity:0.85 }}>
+                                      {vcp.contractions}縮{vcp.vol_contracting ? '📉' : ''}
+                                      {vcp.higher_lows ? '↑' : ''}
+                                    </span>
+                                  : null}
                               </span>
-                              {vcp.pivot_date && (
-                                <span style={{ fontSize:10, color:'var(--text-3)', marginLeft:4 }}>
-                                  {vcp.pivot_date}
+                            : <span style={{ color:'var(--text-3)' }}>—</span>}
+                        </td>
+                      )}
+                      {/* 基準點 + 樞紐點（只在非 HL5MA 模式顯示）*/}
+                      {!hl5maOnly && (
+                        <td className="td-pivot" style={{ fontSize:11, lineHeight:1.55 }}>
+                          {vcp.pivot ? (
+                            <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                              {vcp.base_high > 0 && (
+                                <div>
+                                  <span style={{ fontSize:10, color:'var(--text-3)' }}>基準點　</span>
+                                  <span style={{ fontWeight:600, color:'var(--text-1)' }}>{vcp.base_high}</span>
+                                </div>
+                              )}
+                              <div>
+                                <span style={{ fontSize:10, color:'var(--text-3)' }}>樞紐點　</span>
+                                <span style={{ fontWeight:700, color:'var(--accent)' }}>{vcp.pivot}</span>
+                                <span style={{
+                                  fontSize:10, marginLeft:4,
+                                  color: vcp.dist_pivot <= 0 ? 'var(--down)' :
+                                         vcp.dist_pivot <= 3 ? '#e0a800' :
+                                         vcp.dist_pivot <= 5 ? 'var(--warn)' : 'var(--text-3)'
+                                }}>
+                                  {vcp.dist_pivot <= 0 ? '▲突破' : `距${vcp.dist_pivot}%`}
+                                </span>
+                              </div>
+                              {vcp.buy_status && vcp.buy_status !== '—' && (
+                                <div style={{
+                                  fontSize:10,
+                                  color: vcp.buy_status === '放量突破'     ? 'var(--down)' :
+                                         vcp.buy_status === '等待突破'     ? '#e0a800' :
+                                         vcp.buy_status === '突破(量不足)' ? '#26c6da' :
+                                         vcp.buy_status === '過度延伸'     ? 'var(--text-3)' : 'var(--text-2)',
+                                }}>{vcp.buy_status}</div>
+                              )}
+                            </div>
+                          ) : '—'}
+                        </td>
+                      )}
+                      {/* PP（只在非 HL5MA 模式顯示）*/}
+                      {!hl5maOnly && (
+                        <td>
+                          {row.pocket_pivot
+                            ? <span className="pp-badge">🚀 PP</span>
+                            : <span style={{ color:'var(--text-3)' }}>—</span>}
+                        </td>
+                      )}
+                      {/* HL5MA（只在非 VCP 模式顯示）*/}
+                      {!vcpOnly && (
+                        <td style={{ fontSize:11 }}>
+                          {row.hl5ma?.valid ? (
+                            <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                              <span style={{
+                                color: row.hl5ma.entry ? '#26a69a' : '#6aaa9a',
+                                fontWeight: row.hl5ma.entry ? 700 : 400,
+                              }}>
+                                {row.hl5ma.entry ? '⚡ 買點' : `📈 ${row.hl5ma.count}HL`}
+                              </span>
+                              {row.hl5ma.prev_hl > 0 && (
+                                <span style={{ fontSize:10, color:'var(--text-3)' }}>
+                                  前HL ${row.hl5ma.prev_hl}
+                                </span>
+                              )}
+                              {row.hl5ma.ma5 > 0 && (
+                                <span style={{ fontSize:10, color:'var(--text-3)' }}>
+                                  5MA ${row.hl5ma.ma5}
                                 </span>
                               )}
                             </div>
-
-                            {/* 買點狀態 */}
-                            {vcp.buy_status && vcp.buy_status !== '—' && (
-                              <div style={{
-                                fontSize:10,
-                                color: vcp.buy_status === '放量突破'     ? 'var(--down)' :
-                                       vcp.buy_status === '等待突破'     ? '#e0a800' :
-                                       vcp.buy_status === '突破(量不足)' ? '#26c6da' :
-                                       vcp.buy_status === '過度延伸'     ? 'var(--text-3)' : 'var(--text-2)',
-                              }}>{vcp.buy_status}</div>
-                            )}
-                          </div>
-                        ) : '—'}
-                      </td>
-                      <td>
-                        {row.pocket_pivot
-                          ? <span className="pp-badge">🚀 PP</span>
-                          : <span style={{ color:'var(--text-3)' }}>—</span>}
-                      </td>
-                      {/* HL5MA 欄 */}
-                      <td style={{ fontSize:11 }}>
-                        {row.hl5ma?.valid ? (
-                          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-                            <span style={{
-                              color: row.hl5ma.entry ? '#26a69a' : '#6aaa9a',
-                              fontWeight: row.hl5ma.entry ? 700 : 400,
-                            }}>
-                              {row.hl5ma.entry ? '⚡ 買點' : `📈 ${row.hl5ma.count}HL`}
-                            </span>
-                            {row.hl5ma.prev_hl > 0 && (
-                              <span style={{ fontSize:10, color:'var(--text-3)' }}>
-                                HL ${row.hl5ma.prev_hl}
-                              </span>
-                            )}
-                          </div>
-                        ) : <span style={{ color:'var(--text-3)' }}>—</span>}
-                      </td>
+                          ) : <span style={{ color:'var(--text-3)' }}>—</span>}
+                        </td>
+                      )}
                       <td className={row.from_high >= -10 ? 'up' : ''}>{row.from_high}%</td>
                       <td>
                         <span style={{
