@@ -180,7 +180,11 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
              if "Date" in df.columns
              else [str(df.index[i])[:10] for i in range(n)])
 
-    ma5 = pd.Series(c).rolling(5, min_periods=5).mean().values
+    _s = pd.Series(c)
+    ma5  = _s.rolling(5,  min_periods=5).mean().values
+    ma10 = _s.rolling(10, min_periods=10).mean().values
+    ma20 = _s.rolling(20, min_periods=20).mean().values
+    ma60 = _s.rolling(60, min_periods=60).mean().values
 
     state      = "above"
     swing_high = 0.0
@@ -190,8 +194,8 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
     entry_price = 0.0
     entry_date  = ""
 
-    for i in range(5, n):
-        if np.isnan(ma5[i]):
+    for i in range(60, n):
+        if np.isnan(ma5[i]) or np.isnan(ma60[i]):
             continue
         cur_c   = float(c[i])
         cur_h   = float(hi[i])
@@ -215,7 +219,12 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 avg_vol_2  = float(np.mean(v[max(0, i - 2): i])) if i >= 2 else cur_v
                 vol_ok     = cur_v > avg_vol_2
                 prev_hi_ok = cur_c > float(hi[i - 1]) if i >= 1 else False
-                if 7.0 <= pb_pct <= 10.0 and vol_ok and prev_hi_ok:
+                # 站上 5/10/20/60 均線
+                ma_ok = (cur_c >= float(ma5[i])
+                         and cur_c >= float(ma10[i])
+                         and cur_c >= float(ma20[i])
+                         and cur_c >= float(ma60[i]))
+                if 7.0 <= pb_pct <= 14.0 and vol_ok and prev_hi_ok and ma_ok:
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
@@ -699,24 +708,24 @@ def generate_hl5ma_recommendation(r: dict) -> dict:
     pb_low     = hl5ma.get("pb_low", 0)
     ma5        = hl5ma.get("ma5", close)
 
-    # 進場：站回 5MA + 收盤 > 前日高 + 放量 + 回檔 7-10%
+    # 進場：站回 5MA + 收盤 > 前日高 + 放量 + 回檔 7-14% + 站上所有均線
     if entry_ok:
         stop = pb_low * 0.98 if pb_low else close * 0.93
         return make("buy_now", "⚡ 站回買點", "high",
-                    f"站回 5MA（{ma5}）且收盤突破前日高點，回檔深度 {pb_pct:.1f}%（符合 7-10% 標準），"
-                    f"放量確認。RS {rs:.0f}。進場：{close}，停損：回檔低點 -2%（{round(stop,2)}）。",
+                    f"站回均線且收盤突破前日高點，回檔深度 {pb_pct:.1f}%（符合 7-14% 標準），"
+                    f"放量確認，站上 5/10/20/60MA。RS {rs:.0f}。進場：{close}，停損：回檔低點 -2%（{round(stop,2)}）。",
                     entry=close, stop=stop)
 
     # 回檔中
     if in_pb:
-        if 7.0 <= pb_pct <= 10.0:
-            hint    = f"⚠️ 回檔 {pb_pct:.1f}% 符合範圍，等站回 5MA 放量突破前日高"
+        if 7.0 <= pb_pct <= 14.0:
+            hint    = f"⚠️ 回檔 {pb_pct:.1f}% 符合範圍（7-14%），等站回均線放量突破前日高"
             urgency = "medium"
         elif pb_pct < 7.0:
             hint    = f"回檔尚淺（{pb_pct:.1f}%），需達 7% 以上"
             urgency = "low"
         else:
-            hint    = f"回檔過深（{pb_pct:.1f}%），已超出 10% 標準，等次機會"
+            hint    = f"回檔過深（{pb_pct:.1f}%），已超出 14% 標準，等次機會"
             urgency = "low"
         return make("watch_pb", "🔔 回檔中", urgency,
                     f"{hint}。波段高點 {swing_high}，目前低點 {pb_low}，5MA {ma5}。")
@@ -2399,6 +2408,9 @@ async def run_backtest(
     cs = pd.Series(closes)
     hs = pd.Series(highs)
     ls = pd.Series(lows)
+    ma10_a   = cs.rolling(10,  min_periods=10).mean().values
+    ma20_a   = cs.rolling(20,  min_periods=20).mean().values
+    ma60_a   = cs.rolling(60,  min_periods=60).mean().values
     ma50_a   = cs.rolling(50,  min_periods=1).mean().values
     ma150_a  = cs.rolling(150, min_periods=1).mean().values
     ma200_a  = cs.rolling(200, min_periods=1).mean().values
@@ -2569,9 +2581,15 @@ async def run_backtest(
                         avg_vol    = float(np.mean(vols[max(0, i - 2): i])) if i >= 2 else vol
                         vol_ok     = vol >= avg_vol
                         prev_hi_ok = c > float(highs[i - 1]) if i >= 1 else False
+                        # 站上 5/10/20/60 均線
+                        _m10 = float(ma10_a[i]) if not np.isnan(ma10_a[i]) else 0.0
+                        _m20 = float(ma20_a[i]) if not np.isnan(ma20_a[i]) else 0.0
+                        _m60 = float(ma60_a[i]) if not np.isnan(ma60_a[i]) else 0.0
+                        ma_ok = (_m10 > 0 and _m20 > 0 and _m60 > 0
+                                 and c >= _m10 and c >= _m20 and c >= _m60)
                         if (not in_trade and trend_ok(i)
-                                and 7.0 <= pb_pct <= 10.0
-                                and vol_ok and prev_hi_ok):
+                                and 7.0 <= pb_pct <= 14.0
+                                and vol_ok and prev_hi_ok and ma_ok):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
