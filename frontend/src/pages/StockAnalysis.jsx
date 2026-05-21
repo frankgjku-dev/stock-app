@@ -302,6 +302,79 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
               )}
             </div>
 
+            {/* HL5MA 策略 */}
+            <div className="ar-card">
+              <div className="ar-card-title">
+                📈 HL 5MA 策略
+                {data.hl5ma_valid
+                  ? <span className="ar-vcp-badge" style={{background:'#26a69a33',color:'#26a69a',borderColor:'#26a69a55'}}>{data.hl5ma_count} 個 HL</span>
+                  : <span className="ar-vcp-badge">尚未形成</span>
+                }
+                {data.hl5ma_entry && <span className="ar-vcp-score" style={{background:'#26a69a',color:'#fff'}}>⚡ 買點</span>}
+              </div>
+
+              {/* HL 列表 */}
+              {data.hl5ma_points?.length > 0 ? (
+                <div className="ar-vcps">
+                  {data.hl5ma_points.map((p, i) => (
+                    <div key={i} className="ar-vcp-row">
+                      <span className="ar-vcp-idx">HL{i + 1}</span>
+                      <span className="up">${p.price}</span>
+                      <span style={{fontSize:10,color:'var(--text-3)'}}>{p.date?.slice(5)}</span>
+                      <span style={{fontSize:10,color:'var(--text-3)'}}>5MA {p.entry_price}</span>
+                      {p.vol_ok
+                        ? <span className="ar-tag green" style={{fontSize:9}}>量✓</span>
+                        : <span className="ar-tag"       style={{fontSize:9}}>量✗</span>
+                      }
+                    </div>
+                  ))}
+
+                  {/* 關鍵價位 */}
+                  <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:4}}>
+                    <div className="ar-level-row">
+                      <span className="ar-level-label">5MA（進場觸發）</span>
+                      <span className="ar-level-val">${data.hl5ma_ma5}</span>
+                    </div>
+                    <div className="ar-level-row">
+                      <span className="ar-level-label">前 HL（停損參考）</span>
+                      <span className="ar-level-val down">${data.hl5ma_prev_hl}</span>
+                    </div>
+                  </div>
+
+                  {/* 當前狀態 */}
+                  {data.hl5ma_in_pullback && (
+                    <div className="ar-buy-status" style={{marginTop:6}}>
+                      🔻 回檔中，最低 ${data.hl5ma_pullback_low}
+                      {data.hl5ma_prev_hl > 0 && (
+                        <span style={{
+                          marginLeft:6,
+                          color: data.hl5ma_pullback_low < data.hl5ma_prev_hl ? '#c85a50' : '#26a69a',
+                          fontSize:11
+                        }}>
+                          {data.hl5ma_pullback_low < data.hl5ma_prev_hl ? '⚠️ 已跌破前HL' : '前HL守住✓'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {data.hl5ma_entry && (
+                    <div className="ar-buy-status" style={{color:'#26a69a',marginTop:6}}>
+                      ⚡ 今日站回 5MA 且放量，符合進場條件
+                    </div>
+                  )}
+                  {!data.hl5ma_in_pullback && !data.hl5ma_entry && data.hl5ma_valid && (
+                    <div className="ar-buy-status" style={{marginTop:6}}>
+                      等待回檔至 5MA 以下形成下一個 HL
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="ar-empty">
+                  尚未形成有效 HL 結構<br/>
+                  <span style={{fontSize:11,opacity:0.7}}>需：連續 ≥2 次站回 5MA 且低點墊高</span>
+                </div>
+              )}
+            </div>
+
             {/* 風險報酬 */}
             <div className="ar-card">
               <div className="ar-card-title">⚖️ 風險報酬</div>

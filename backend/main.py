@@ -140,6 +140,141 @@ def _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100, window=5, min_dep
     return deduped
 
 
+def detect_hl5ma(df: pd.DataFrame) -> dict:
+    """
+    Higher Low 5MA Strategy 偵測（獨立策略，不與 VCP 混合）
+
+    核心邏輯（狀態機）：
+    ─────────────────────────────────────────────────────────
+    ABOVE_MA5 → 收盤跌破 5MA → BELOW_MA5
+      • 期間持續記錄最低點（用 Low 而非 Close）
+      • 若最低點跌破前一個 HL → 結構失效，全部重置
+    BELOW_MA5 → 收盤站回 5MA（且回檔 ≥2 根 K 棒）：
+      • 計算當次回檔最低點
+      • 若最低點 > 前一個 HL → 新 HL 確認
+      • 當日量 > 前 2 日均量 → 觸發買點
+
+    進場條件（同時滿足）：
+      1. 收盤站上 5MA（方案 A 保守）
+      2. 當日量 > 前 2 日均量
+      3. 最新 HL > 前一 HL（連續 ≥2 個 HL）
+      4. 回檔期間未跌破前一 HL
+
+    失效條件：
+      • 回檔低點跌破前一 HL → 全部重置
+    ─────────────────────────────────────────────────────────
+    回傳 dict：
+      valid        - bool，是否有 ≥2 個有效 HL
+      hl_count     - int，連續 HL 數
+      hl_points    - list[dict]，各 HL 的 price / date / entry_price / vol_ok
+      entry        - bool，當日是否觸發買點
+      entry_price  - float，當日 5MA（進場觸發價）
+      prev_hl      - float，最近一個 HL 低點（停損參考）
+      in_pullback  - bool，當前是否在回檔中
+      pullback_low - float，當前回檔期間最低點（僅 in_pullback 時有意義）
+      ma5          - float，當日 5MA
+    """
+    empty = {
+        "valid": False, "hl_count": 0, "hl_points": [],
+        "entry": False, "entry_price": 0.0,
+        "prev_hl": 0.0, "in_pullback": False,
+        "pullback_low": 0.0, "ma5": 0.0,
+    }
+    if len(df) < 20:
+        return empty
+
+    c   = df["Close"].values.astype(float)
+    lo  = df["Low"].values.astype(float)
+    v   = df["Volume"].values.astype(float)
+    n   = len(c)
+    dates = (df["Date"].astype(str).values
+             if "Date" in df.columns
+             else [str(df.index[i])[:10] for i in range(n)])
+
+    ma5 = pd.Series(c).rolling(5, min_periods=5).mean().values
+
+    # ── 狀態機變數 ──────────────────────────────────────────
+    hl_points      = []   # 已確認的 HL 列表
+    prev_hl_price  = None # 前一個確認的 HL 價格
+    in_pullback    = False
+    pullback_low   = None
+    pullback_bars  = 0
+
+    for i in range(5, n):
+        if np.isnan(ma5[i]):
+            continue
+        cur_close = float(c[i])
+        cur_low   = float(lo[i])
+        cur_vol   = float(v[i])
+
+        if not in_pullback:
+            # ── 跌破 5MA → 進入回檔 ──────────────────────
+            if cur_close < ma5[i]:
+                in_pullback   = True
+                pullback_bars = 1
+                pullback_low  = cur_low
+        else:
+            # ── 在回檔中 ────────────────────────────────
+            pullback_low  = min(pullback_low, cur_low)
+            pullback_bars += 1
+
+            # 跌破前一個 HL → 結構失效，全部重置
+            if prev_hl_price is not None and pullback_low < prev_hl_price * 0.995:
+                hl_points     = []
+                prev_hl_price = None
+                in_pullback   = False
+                pullback_low  = None
+                pullback_bars = 0
+                # 若當下收盤仍在 5MA 以下，重新開啟新的回檔追蹤
+                if cur_close < ma5[i]:
+                    in_pullback  = True
+                    pullback_bars = 1
+                    pullback_low  = cur_low
+                continue
+
+            # 站回 5MA 且回檔 ≥ 2 根 K 棒
+            if cur_close >= ma5[i] and pullback_bars >= 2:
+                avg_vol_2 = float(np.mean(v[max(0, i - 2):i])) if i >= 2 else cur_vol
+                vol_ok    = cur_vol > avg_vol_2
+
+                # 新 HL 必須高於前一個 HL（或是第一個 HL）
+                if prev_hl_price is None or pullback_low > prev_hl_price * 0.995:
+                    hl_points.append({
+                        "price":       round(pullback_low, 2),
+                        "date":        str(dates[i])[:10],
+                        "entry_price": round(float(ma5[i]), 2),
+                        "vol_ok":      vol_ok,
+                    })
+                    prev_hl_price = pullback_low
+
+                # 重置回檔追蹤
+                in_pullback   = False
+                pullback_low  = None
+                pullback_bars = 0
+
+    # ── 當日是否觸發買點 ─────────────────────────────────
+    entry = False
+    if hl_points:
+        last = hl_points[-1]
+        # 最後一個 HL 是今天（index = n-1 的站回動作），且量 OK，且 ≥2 個 HL
+        if last["vol_ok"] and len(hl_points) >= 2 and last["date"] == str(dates[n - 1])[:10]:
+            entry = True
+
+    cur_ma5 = float(ma5[-1]) if not np.isnan(ma5[-1]) else 0.0
+
+    return {
+        "valid":        len(hl_points) >= 2,
+        "hl_count":     len(hl_points),
+        "hl_points":    hl_points[-5:],   # 最多回傳最近 5 個
+        "entry":        entry,
+        "entry_price":  round(cur_ma5, 2),
+        "prev_hl":      round(prev_hl_price, 2) if prev_hl_price else 0.0,
+        "in_pullback":  in_pullback,
+        "pullback_low": round(pullback_low, 2) if pullback_low else 0.0,
+        "ma5":          round(cur_ma5, 2),
+    }
+
+
 def _best_contraction_sequence(pullbacks):
     """
     從回檔清單中找「深度遞減 + 低點墊高」的最長子序列。
@@ -2026,6 +2161,9 @@ async def analyze_stock(symbol: str):
         # ── 5. VCP 完整偵測（call detect_vcp，與選股頁同一套邏輯）──
         vcp = detect_vcp(df, cur, m50 or cur, h52)
 
+        # ── 5b. HL5MA 獨立策略偵測 ─────────────────────────────────
+        hl5ma = detect_hl5ma(df)
+
         # 取出收縮序列（用於前端顯示回檔明細）
         all_pbs  = _find_pullback_sequence(h_arr, l_arr, v_arr, lookback=100)
         vcp_seq  = _best_contraction_sequence(all_pbs)
@@ -2145,6 +2283,16 @@ async def analyze_stock(symbol: str):
             "pivot_price":    pivot_price,
             "dist_to_pivot":  round(dist_to_pivot, 1) if dist_to_pivot is not None else None,
             "base_high":      vcp.get("base_high"),
+            # HL5MA 獨立策略
+            "hl5ma_valid":       hl5ma["valid"],
+            "hl5ma_count":       hl5ma["hl_count"],
+            "hl5ma_points":      hl5ma["hl_points"],
+            "hl5ma_entry":       hl5ma["entry"],
+            "hl5ma_entry_price": hl5ma["entry_price"],
+            "hl5ma_prev_hl":     hl5ma["prev_hl"],
+            "hl5ma_in_pullback": hl5ma["in_pullback"],
+            "hl5ma_pullback_low":hl5ma["pullback_low"],
+            "hl5ma_ma5":         hl5ma["ma5"],
             # 量能
             "vol_ratio":  vol_ratio,
             "avg_vol20":  int(avg_vol20),
