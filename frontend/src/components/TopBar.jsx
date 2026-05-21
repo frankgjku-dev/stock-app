@@ -11,8 +11,10 @@ const INTERVALS = [
   { label: '月',   interval: '1mo', period: 'max' },
 ]
 
+const DAY_PERIODS = ['1y', '2y', '3y', '5y']
+
 export default function TopBar({
-  symbol, quote, interval,
+  symbol, quote, interval, period,
   onSymbolChange, onIntervalChange,
   watchlist, onToggleInGroup, onAddGroup,
 }) {
@@ -159,15 +161,31 @@ export default function TopBar({
 
       {/* Intervals */}
       <div className="interval-selector">
-        {INTERVALS.map(({ label, interval: iv, period }) => (
+        {INTERVALS.map(({ label, interval: iv, period: defaultPeriod }) => (
           <button
             key={label}
             className={`interval-btn ${interval === iv ? 'active' : ''}`}
-            onClick={() => onIntervalChange(iv, period)}
+            onClick={() => onIntervalChange(iv, defaultPeriod)}
           >
             {label}
           </button>
         ))}
+
+        {/* 日線期間選擇 */}
+        {interval === '1d' && (
+          <>
+            <span style={{ color: 'var(--text-3)', margin: '0 4px', fontSize: 12 }}>|</span>
+            {DAY_PERIODS.map(p => (
+              <button
+                key={p}
+                className={`interval-btn ${interval === '1d' && period === p ? 'active' : ''}`}
+                onClick={() => onIntervalChange('1d', p)}
+              >
+                {p}
+              </button>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

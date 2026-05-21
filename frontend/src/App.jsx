@@ -311,7 +311,7 @@ export default function App() {
       {/* ── 頂部 ── */}
       {tab === 'chart' ? (
         <TopBar
-          symbol={symbol} quote={quote} interval={interval}
+          symbol={symbol} quote={quote} interval={interval} period={period}
           onSymbolChange={(s) => { setSymbol(s); setBtMarkers(null) }} onIntervalChange={handleIntervalChange}
           watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
         />
