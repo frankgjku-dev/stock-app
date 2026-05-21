@@ -26,6 +26,7 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
   const [stopPct,    setStopPct]    = useState(8)
   const [targetPct,  setTargetPct]  = useState(20)
   const [holdDays,   setHoldDays]   = useState(60)
+  const [strategy,   setStrategy]   = useState('vcp')       // "vcp" | "hl5ma"
   const [selConds,   setSelConds]   = useState(new Set())   // 選中的條件 id
   const [showConds,  setShowConds]  = useState(false)       // 展開條件面板
   const [loading,    setLoading]    = useState(false)
@@ -53,6 +54,7 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
         target_pct: targetPct,
         hold_days:  holdDays,
         period,
+        strategy,
         conditions: [...selConds].sort((a, b) => a - b).join(','),
       })
       const r = await fetch(`${API_BASE}/api/stocks/${sym}/backtest?${params}`)
@@ -67,12 +69,34 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
   }
 
   const s = result?.stats
+  const isHL5MA = strategy === 'hl5ma'
   const condLabel = selConds.size === 0
-    ? '不限（僅 VCP）'
+    ? isHL5MA ? '不限（僅 HL5MA）' : '不限（僅 VCP）'
     : `需同時符合 ${selConds.size} 個條件`
 
   return (
     <div className="backtest-page">
+
+      {/* ── 策略選擇 ── */}
+      <div className="bt-strategy-tabs">
+        <button
+          className={`bt-strat-btn ${strategy === 'vcp' ? 'active' : ''}`}
+          onClick={() => { setStrategy('vcp'); setResult(null) }}
+        >
+          📊 VCP 突破
+        </button>
+        <button
+          className={`bt-strat-btn ${strategy === 'hl5ma' ? 'active' : ''}`}
+          onClick={() => { setStrategy('hl5ma'); setResult(null) }}
+        >
+          📈 HL 5MA 站回
+        </button>
+        <span className="bt-strat-desc">
+          {isHL5MA
+            ? '連續高低點墊高（HL），收盤站回 5MA 時進場'
+            : '價量收縮（VCP）型態放量突破樞紐點時進場'}
+        </span>
+      </div>
 
       {/* ── 基本參數列 ── */}
       <div className="bt-params">
@@ -165,7 +189,7 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
       {loading && (
         <div className="bt-loading">
           <div className="bt-spinner" />
-          正在進行 VCP 回測，請稍候（約 10–20 秒）…
+          正在進行 {isHL5MA ? 'HL 5MA' : 'VCP'} 回測，請稍候（約 10–20 秒）…
         </div>
       )}
 
@@ -226,7 +250,7 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
                       <th>#</th>
                       <th>買入日期</th>
                       <th>賣出日期</th>
-                      <th>基準點</th>
+                      <th>{isHL5MA ? '前HL停損' : '基準點'}</th>
                       <th>買入價</th>
                       <th>賣出價</th>
                       <th>持有天</th>
@@ -263,7 +287,7 @@ export default function Backtest({ symbol: defaultSymbol = '2330' }) {
             </div>
           ) : (
             <div className="bt-no-trades">
-              此期間未偵測到符合條件的 VCP 放量突破買點
+              此期間未偵測到符合條件的 {isHL5MA ? 'HL 5MA 站回' : 'VCP 放量突破'} 買點
               {selConds.size > 0 && `（已加入 ${selConds.size} 個 Trend Template 條件篩選）`}
             </div>
           )}

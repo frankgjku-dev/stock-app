@@ -703,6 +703,54 @@ def check_trend_template(df: pd.DataFrame, code: str, name: str) -> dict | None:
 # ══════════════════════════════════════════════════════════
 #  選股建議引擎（Trade Setup Generator）
 # ══════════════════════════════════════════════════════════
+def generate_hl5ma_recommendation(r: dict) -> dict:
+    """HL5MA 策略專屬建議（獨立於 VCP）"""
+    hl5ma  = r.get("hl5ma") or {}
+    rs     = r.get("rs_rating", 0)
+    close  = r["close"]
+
+    def make(action, label, urgency, reason, entry=None, stop=None):
+        return {
+            "action": action, "action_label": label,
+            "urgency": urgency, "setup_type": "HL5MA",
+            "reason": reason,
+            "entry":  round(entry, 2) if entry else None,
+            "stop":   round(stop,  2) if stop  else None,
+            "target": round(close * 1.20, 2),
+        }
+
+    if not hl5ma.get("valid"):
+        return make("not_ready", "📋 HL未成立", "none",
+                    f"尚未形成連續 HL 結構，RS {rs:.0f}。")
+
+    count    = hl5ma.get("count", 0)
+    entry_ok = hl5ma.get("entry", False)
+    in_pb    = hl5ma.get("in_pullback", False)
+    prev_hl  = hl5ma.get("prev_hl", 0)
+    ma5      = hl5ma.get("ma5", close)
+
+    if entry_ok:
+        stop = prev_hl * 0.98 if prev_hl else close * 0.93
+        return make("buy_now", "⚡ HL站回5MA買點", "high",
+                    f"今日收盤站上 5MA（{ma5}）且放量，已形成 {count} 個 Higher Low，"
+                    f"RS {rs:.0f}。進場：{ma5}，停損：前HL {prev_hl}（-2%）。",
+                    entry=ma5, stop=stop)
+
+    if in_pb:
+        pb_low = hl5ma.get("pullback_low", 0)
+        if prev_hl and pb_low and pb_low < prev_hl:
+            return make("not_ready", "⚠️ 已跌破前HL", "none",
+                        f"回檔低點 {pb_low} 已跌破前 HL {prev_hl}，結構失效，重新等待。")
+        return make("breakout", "🔔 回檔中，等站回5MA", "medium",
+                    f"第 {count} 個 HL 形成中，目前回檔低點 {pb_low}（前HL {prev_hl}）。"
+                    f"等收盤站上 5MA（{ma5}）且放量後進場。",
+                    entry=ma5)
+
+    return make("watch", f"👀 {count}HL結構，等下次回踩", "low",
+                f"已形成 {count} 個 Higher Low，RS {rs:.0f}。"
+                f"等股價回踩 5MA（{ma5}）附近再找進場點。")
+
+
 def generate_recommendation(r: dict) -> dict:
     """
     依據 VCP / Pocket Pivot / RS / 趨勢 產生進場建議。
@@ -973,7 +1021,8 @@ async def run_scan():
 
         # 生成選股建議（rs_rating 已確定後才呼叫）
         for r in raw_results:
-            r["recommendation"] = generate_recommendation(r)
+            r["recommendation"]      = generate_recommendation(r)
+            r["hl5ma_recommendation"] = generate_hl5ma_recommendation(r)
 
     scan_cache.update({
         "status": "done",
@@ -2333,6 +2382,7 @@ async def run_backtest(
     hold_days:  int   = 60,
     period:     str   = "3y",
     conditions: str   = "",   # 要求通過的條件編號（逗號分隔），空=不限
+    strategy:   str   = "vcp",  # "vcp" | "hl5ma"
 ):
     """
     VCP 突破策略回測（逐日 walk-forward）
@@ -2407,6 +2457,7 @@ async def run_backtest(
     trades_out = []
     equity_out = []
 
+    # ── VCP 突破策略 worker ───────────────────────────────────
     def _worker():
         equity      = 100.0
         in_trade    = False
@@ -2473,24 +2524,91 @@ async def run_backtest(
 
             equity_out.append({"date": dates[i], "value": round(equity, 2)})
 
-        # 若回測結束時仍在倉，以最後收盤平倉
-        if in_trade:
-            last = float(closes[-1])
-            pnl  = (last - entry_price) / entry_price * 100
-            equity *= (1 + pnl / 100)
-            trades_out.append({
-                "entry_date":  entry_date,
-                "exit_date":   dates[-1],
-                "entry_price": round(entry_price, 2),
-                "exit_price":  round(last, 2),
-                "pivot":       round(entry_pivot, 2),
-                "pnl_pct":     round(pnl, 2),
-                "exit_reason": "持倉中",
-                "days_held":   len(closes) - 1 - entry_idx,
-            })
-        return equity
+    # ── Dispatch ─────────────────────────────────────────────
+    if strategy == "hl5ma":
+        # _worker_hl5ma does NOT handle trailing; patch it inline via a wrapper
+        def _worker_hl5ma_full():
+            ma5_a_loc = cs.rolling(5, min_periods=5).mean().values
 
-    final_equity = await loop.run_in_executor(executor, _worker)
+            hl_state   = "above"
+            pb_low     = float('inf')
+            pb_bars    = 0
+            hl_count   = 0
+            prev_hl_p  = 0.0
+
+            equity      = 100.0
+            in_trade    = False
+            entry_price = 0.0
+            entry_date  = ""
+            entry_idx   = 0
+            entry_ref   = 0.0
+
+            for i in range(LOOKBACK, len(closes)):
+                c   = float(closes[i])
+                lo  = float(lows[i])
+                vol = float(vols[i])
+                ma5 = float(ma5_a_loc[i]) if not np.isnan(ma5_a_loc[i]) else c
+
+                if in_trade:
+                    days_held    = i - entry_idx
+                    stop_price   = entry_price * (1 - stop_pct   / 100)
+                    target_price = entry_price * (1 + target_pct / 100)
+                    exit_reason  = None
+                    exit_price   = c
+                    if c <= stop_price:   exit_reason = "停損";      exit_price = stop_price
+                    elif c >= target_price: exit_reason = "停利"
+                    elif days_held >= hold_days: exit_reason = "時間停損"
+                    if exit_reason:
+                        pnl = (exit_price - entry_price) / entry_price * 100
+                        equity *= (1 + pnl / 100)
+                        trades_out.append({
+                            "entry_date": entry_date, "exit_date": dates[i],
+                            "entry_price": round(entry_price, 2), "exit_price": round(exit_price, 2),
+                            "pivot": round(entry_ref, 2), "pnl_pct": round(pnl, 2),
+                            "exit_reason": exit_reason, "days_held": days_held,
+                        })
+                        in_trade = False
+
+                if hl_state == "above":
+                    if c < ma5:
+                        hl_state = "below"; pb_low = lo; pb_bars = 1
+                else:
+                    if lo < pb_low: pb_low = lo
+                    pb_bars += 1
+                    if prev_hl_p > 0 and pb_low < prev_hl_p * 0.995:
+                        hl_count = 0; prev_hl_p = 0.0; pb_bars = 0; pb_low = float('inf')
+                        hl_state = "below" if c < ma5 else "above"
+                        if hl_state == "below": pb_low = lo; pb_bars = 1
+                        equity_out.append({"date": dates[i], "value": round(equity, 2)})
+                        continue
+                    if c >= ma5 and pb_bars >= 2:
+                        saved_pb_bars = pb_bars; saved_pb_low = pb_low
+                        if prev_hl_p == 0 or saved_pb_low > prev_hl_p * 0.995:
+                            hl_count += 1; prev_hl_p = saved_pb_low
+                        hl_state = "above"; pb_bars = 0; pb_low = float('inf')
+                        if not in_trade and hl_count >= 2 and trend_ok(i):
+                            avg_vol = float(np.mean(vols[max(0, i - 2): i])) if i >= 2 else vol
+                            if vol >= avg_vol:
+                                in_trade = True; entry_price = c
+                                entry_date = dates[i]; entry_idx = i; entry_ref = prev_hl_p
+
+                equity_out.append({"date": dates[i], "value": round(equity, 2)})
+
+            if in_trade:
+                last = float(closes[-1])
+                pnl  = (last - entry_price) / entry_price * 100
+                equity *= (1 + pnl / 100)
+                trades_out.append({
+                    "entry_date": entry_date, "exit_date": dates[-1],
+                    "entry_price": round(entry_price, 2), "exit_price": round(last, 2),
+                    "pivot": round(entry_ref, 2), "pnl_pct": round(pnl, 2),
+                    "exit_reason": "持倉中", "days_held": len(closes) - 1 - entry_idx,
+                })
+            return equity
+
+        final_equity = await loop.run_in_executor(executor, _worker_hl5ma_full)
+    else:
+        final_equity = await loop.run_in_executor(executor, _worker)
 
     # ── 統計 ──────────────────────────────────────────────
     total = len(trades_out)
@@ -2524,7 +2642,7 @@ async def run_backtest(
         "profit_factor": pf,
     }
 
-    return {"symbol": symbol, "trades": trades_out, "stats": stats, "equity_curve": equity_out}
+    return {"symbol": symbol, "strategy": strategy, "trades": trades_out, "stats": stats, "equity_curve": equity_out}
 
 
 if __name__ == "__main__":
