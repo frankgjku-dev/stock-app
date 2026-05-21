@@ -127,18 +127,21 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
     return true
   })
 
+  // 根據篩選模式決定用哪個建議欄位
+  const getRec = (r) => hl5maOnly ? r.hl5ma_recommendation : r.recommendation
+
   // 高優先面板：從 baseFiltered 取 urgency=high，確保與表格同一母集
-  const highPriority = baseFiltered.filter(r => r.recommendation?.urgency === 'high')
+  const highPriority = baseFiltered.filter(r => getRec(r)?.urgency === 'high')
 
   // 表格：在 baseFiltered 基礎上再套 urgencyFilter
   const filtered = baseFiltered.filter(r => {
-    if (urgencyFilter !== 'all' && r.recommendation?.urgency !== urgencyFilter) return false
+    if (urgencyFilter !== 'all' && getRec(r)?.urgency !== urgencyFilter) return false
     return true
   }).sort((a, b) => {
     const urgOrder = { high:3, medium:2, low:1, none:0 }
     if (sortKey === 'urgency') {
-      const va = urgOrder[a.recommendation?.urgency] ?? 0
-      const vb = urgOrder[b.recommendation?.urgency] ?? 0
+      const va = urgOrder[getRec(a)?.urgency] ?? 0
+      const vb = urgOrder[getRec(b)?.urgency] ?? 0
       return sortAsc ? va - vb : vb - va
     }
     const va = sortKey === 'vcp' ? (a.vcp?.score ?? 0) : (a[sortKey] ?? 0)
@@ -300,7 +303,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
       {detail && detailData && (() => {
         const row = detailData
         const vcp = row.vcp ?? {}
-        const rec = row.recommendation
+        const rec = getRec(row)
         const us  = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.none
         return (
           <>
@@ -532,8 +535,9 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
           {showPriority && (
             <div className="priority-cards">
               {highPriority.map(r => {
-                const rec = r.recommendation
+                const rec = getRec(r)
                 const vcp = r.vcp ?? {}
+                const hl5 = r.hl5ma ?? {}
                 const sty = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.low
 
                 // 買點狀態顏色
@@ -563,74 +567,112 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                       <span className="pc-action" style={{ color: sty.text }}>{rec?.action_label}</span>
                     </div>
 
-                    {/* ── VCP 核心數據列 ── */}
+                    {/* ── 核心數據列（VCP vs HL5MA）── */}
                     <div className="pc-vcp-row">
-                      {/* VCP 總分 */}
-                      <div className="pc-vcp-chip" style={{ color: scoreColor, borderColor: scoreColor + '55' }}>
-                        <span className="pc-vcp-k">VCP分</span>
-                        <span className="pc-vcp-v">{s100}</span>
-                      </div>
+                      {hl5maOnly ? (
+                        /* ── HL5MA 模式 ── */
+                        <>
+                          {/* HL 計數 */}
+                          <div className="pc-vcp-chip" style={{ color:'#26a69a', borderColor:'#26a69a55' }}>
+                            <span className="pc-vcp-k">HL 數</span>
+                            <span className="pc-vcp-v">{hl5.count ?? 0} 個</span>
+                          </div>
 
-                      {/* 買點狀態 */}
-                      {vcp.buy_status && vcp.buy_status !== '—' && (
-                        <div className="pc-vcp-chip" style={{ color: buyColor, borderColor: buyColor + '55' }}>
-                          <span className="pc-vcp-k">狀態</span>
-                          <span className="pc-vcp-v">{vcp.buy_status}</span>
-                        </div>
-                      )}
-
-                      {/* 收縮次數 + 深度 */}
-                      {vcp.contractions >= 2 && (
-                        <div className="pc-vcp-chip">
-                          <span className="pc-vcp-k">收縮</span>
-                          <span className="pc-vcp-v">
-                            {vcp.contractions}次
-                            {vcp.contraction_depths?.length
-                              ? ` (${vcp.contraction_depths.map(d => d + '%').join('→')})`
-                              : ''}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* 基準點（VCP 起始高點） */}
-                      {vcp.base_high > 0 && (
-                        <div className="pc-vcp-chip">
-                          <span className="pc-vcp-k">基準點</span>
-                          <span className="pc-vcp-v">{vcp.base_high}</span>
-                          {vcp.base_high_date && (
-                            <span style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>
-                              📅 {vcp.base_high_date}
-                            </span>
+                          {/* 買點狀態 */}
+                          {hl5.entry && (
+                            <div className="pc-vcp-chip" style={{ color:'#3a8a5a', borderColor:'#3a8a5a55' }}>
+                              <span className="pc-vcp-k">狀態</span>
+                              <span className="pc-vcp-v">⚡ 站回5MA</span>
+                            </div>
                           )}
-                        </div>
-                      )}
 
-                      {/* 樞紐點（買入觸發，最後收縮高點） */}
-                      {vcp.pivot > 0 && (
-                        <div className="pc-vcp-chip" style={{ borderColor: 'var(--accent)55' }}>
-                          <span className="pc-vcp-k">樞紐點（買點）</span>
-                          <span className="pc-vcp-v" style={{ color: 'var(--accent)' }}>
-                            {vcp.pivot}
-                            {vcp.dist_pivot != null && (
-                              <span style={{ fontSize: 10, marginLeft: 3, opacity: 0.8 }}>
-                                {vcp.dist_pivot <= 0 ? '▲已突破' : `距${vcp.dist_pivot}%`}
+                          {/* 5MA 價格 */}
+                          {hl5.ma5 > 0 && (
+                            <div className="pc-vcp-chip">
+                              <span className="pc-vcp-k">5MA</span>
+                              <span className="pc-vcp-v">{hl5.ma5}</span>
+                            </div>
+                          )}
+
+                          {/* 前一 HL（停損參考） */}
+                          {hl5.prev_hl > 0 && (
+                            <div className="pc-vcp-chip" style={{ borderColor:'var(--accent)55' }}>
+                              <span className="pc-vcp-k">前HL（停損）</span>
+                              <span className="pc-vcp-v" style={{ color:'var(--accent)' }}>{hl5.prev_hl}</span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        /* ── VCP 模式 ── */
+                        <>
+                          {/* VCP 總分 */}
+                          <div className="pc-vcp-chip" style={{ color: scoreColor, borderColor: scoreColor + '55' }}>
+                            <span className="pc-vcp-k">VCP分</span>
+                            <span className="pc-vcp-v">{s100}</span>
+                          </div>
+
+                          {/* 買點狀態 */}
+                          {vcp.buy_status && vcp.buy_status !== '—' && (
+                            <div className="pc-vcp-chip" style={{ color: buyColor, borderColor: buyColor + '55' }}>
+                              <span className="pc-vcp-k">狀態</span>
+                              <span className="pc-vcp-v">{vcp.buy_status}</span>
+                            </div>
+                          )}
+
+                          {/* 收縮次數 + 深度 */}
+                          {vcp.contractions >= 2 && (
+                            <div className="pc-vcp-chip">
+                              <span className="pc-vcp-k">收縮</span>
+                              <span className="pc-vcp-v">
+                                {vcp.contractions}次
+                                {vcp.contraction_depths?.length
+                                  ? ` (${vcp.contraction_depths.map(d => d + '%').join('→')})`
+                                  : ''}
                               </span>
-                            )}
-                          </span>
-                          {vcp.pivot_date && (
-                            <span style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>
-                              📅 {vcp.pivot_date}
-                            </span>
+                            </div>
                           )}
-                        </div>
-                      )}
 
-                      {/* 低點墊高 / 量縮 */}
-                      <div className="pc-vcp-flags">
-                        {vcp.higher_lows    && <span className="pc-flag pc-flag-green">↑低點墊高</span>}
-                        {vcp.vol_contracting && <span className="pc-flag pc-flag-blue">📉量縮</span>}
-                        {r.pocket_pivot     && <span className="pc-flag pc-flag-orange">🚀 PP</span>}
-                      </div>
+                          {/* 基準點（VCP 起始高點） */}
+                          {vcp.base_high > 0 && (
+                            <div className="pc-vcp-chip">
+                              <span className="pc-vcp-k">基準點</span>
+                              <span className="pc-vcp-v">{vcp.base_high}</span>
+                              {vcp.base_high_date && (
+                                <span style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>
+                                  📅 {vcp.base_high_date}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 樞紐點（買入觸發，最後收縮高點） */}
+                          {vcp.pivot > 0 && (
+                            <div className="pc-vcp-chip" style={{ borderColor: 'var(--accent)55' }}>
+                              <span className="pc-vcp-k">樞紐點（買點）</span>
+                              <span className="pc-vcp-v" style={{ color: 'var(--accent)' }}>
+                                {vcp.pivot}
+                                {vcp.dist_pivot != null && (
+                                  <span style={{ fontSize: 10, marginLeft: 3, opacity: 0.8 }}>
+                                    {vcp.dist_pivot <= 0 ? '▲已突破' : `距${vcp.dist_pivot}%`}
+                                  </span>
+                                )}
+                              </span>
+                              {vcp.pivot_date && (
+                                <span style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>
+                                  📅 {vcp.pivot_date}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 低點墊高 / 量縮 */}
+                          <div className="pc-vcp-flags">
+                            {vcp.higher_lows    && <span className="pc-flag pc-flag-green">↑低點墊高</span>}
+                            {vcp.vol_contracting && <span className="pc-flag pc-flag-blue">📉量縮</span>}
+                            {r.pocket_pivot     && <span className="pc-flag pc-flag-orange">🚀 PP</span>}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* ── 進場參考 ── */}
@@ -705,7 +747,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
               {filtered.map(row => {
                 const vcp = row.vcp ?? {}
                 const vc  = vcpColor(vcp.score ?? 0)
-                const rec = row.recommendation
+                const rec = getRec(row)
                 const us  = URGENCY_STYLE[rec?.urgency] || URGENCY_STYLE.none
                 const isFav = allFavSymbols.includes(row.symbol)
 
