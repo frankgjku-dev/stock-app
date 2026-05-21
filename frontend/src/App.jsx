@@ -17,7 +17,7 @@ import RSRanking        from './pages/RSRanking'
 import StockAnalysis    from './pages/StockAnalysis'
 import useStockData     from './hooks/useStockData'
 import { supabase }     from './lib/supabase'
-import { API_BASE }     from './config'
+import { API_BASE, APP_VERSION } from './config'
 
 const TABS = [
   { id: 'chart',      label: 'K線分析' },
@@ -284,7 +284,14 @@ export default function App() {
           watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
         />
       ) : (
-        <div className="topbar"><div className="logo">台股分析</div></div>
+        <div className="topbar">
+          <div className="logo">
+            台股分析
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)', marginLeft: 6, letterSpacing: 0 }}>
+              {APP_VERSION}
+            </span>
+          </div>
+        </div>
       )}
 
       {/* ── 雲端同步狀態列 ── */}

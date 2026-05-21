@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { API_BASE } from '../config'
+import { API_BASE, APP_VERSION } from '../config'
 
 const INTERVALS = [
   { label: '1分',  interval: '1m',  period: '7d'  },
@@ -63,7 +63,12 @@ export default function TopBar({
 
   return (
     <div className="topbar">
-      <div className="logo">台股分析</div>
+      <div className="logo">
+        台股分析
+        <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)', marginLeft: 6, letterSpacing: 0 }}>
+          {APP_VERSION}
+        </span>
+      </div>
 
       {/* Search */}
       <div className="search-wrapper">
