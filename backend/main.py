@@ -4,6 +4,9 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import httpx
 import yfinance as yf
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import pandas as pd
 import numpy as np
 import pytz
@@ -22,6 +25,28 @@ app.add_middleware(
 
 TAIWAN_TZ = pytz.timezone("Asia/Taipei")
 executor = ThreadPoolExecutor(max_workers=6)
+
+# ── yfinance session：加 User-Agent 避免 Yahoo Finance 限速 ──
+def _make_yf_session() -> requests.Session:
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+    retry = Retry(total=3, backoff_factor=1.0, status_forcelist=[429, 500, 502, 503])
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    return s
+
+YF_SESSION = _make_yf_session()
+
+# ── K 線快取：同一 symbol+interval+period 快取 5 分鐘 ──────────
+_candle_cache: dict[str, tuple[datetime, list]] = {}
+CACHE_TTL = timedelta(minutes=5)
 
 # ── 股票清單 ──────────────────────────────────────────────
 STOCK_LIST = {
@@ -919,7 +944,7 @@ def detect_pocket_pivot(df: pd.DataFrame) -> bool:
 def _fetch_df(code: str) -> pd.DataFrame | None:
     """單支股票 K 線（K線圖端點使用）"""
     try:
-        df = yf.Ticker(f"{code}.TW").history(
+        df = yf.Ticker(f"{code}.TW", session=YF_SESSION).history(
             period="1y", interval="1d", auto_adjust=True
         )
         return df if not df.empty else None

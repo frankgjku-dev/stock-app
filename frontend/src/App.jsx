@@ -16,7 +16,9 @@ import MarketIntel      from './pages/MarketIntel'
 import RSRanking        from './pages/RSRanking'
 import StockAnalysis    from './pages/StockAnalysis'
 import useStockData     from './hooks/useStockData'
-import { supabase }     from './lib/supabase'
+import { auth, db, loginWithGoogle } from './firebase'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { doc, getDoc, setDoc }        from 'firebase/firestore'
 import { API_BASE, APP_VERSION } from './config'
 
 const TABS = [
@@ -41,7 +43,7 @@ function ls(key, fallback) {
 export default function App() {
   /* ── auth ── */
   const [user,      setUser]      = useState(null)
-  const [showAuth,  setShowAuth]  = useState(false)
+
   const [syncing,   setSyncing]   = useState(false)
   const syncTimer = useRef(null)
 
@@ -83,26 +85,20 @@ export default function App() {
      雲端同步工具函式
   ══════════════════════════════════════════════════ */
   async function loadFromCloud(uid) {
-    const { data, error } = await supabase
-      .from('user_data')
-      .select('watchlist, holdings, journal, drawings, alerts')
-      .eq('id', uid)
-      .single()
-    if (error) {
-      // PGRST116 = 找不到資料列（新用戶，正常）；其他才是真正錯誤
-      if (error.code !== 'PGRST116') {
-        console.error('[Supabase loadFromCloud error]', error.code, error.message, error.details)
-        setSyncing('error')
-      }
-      return
+    try {
+      const snap = await getDoc(doc(db, 'user_data', uid))
+      if (!snap.exists()) return
+      const data = snap.data()
+      if (data.watchlist) { setWatchlist(data.watchlist); localStorage.setItem('tw_watchlist', JSON.stringify(data.watchlist)) }
+      if (data.holdings)  { setHoldings(data.holdings);   localStorage.setItem('tw_holdings',  JSON.stringify(data.holdings)) }
+      if (data.journal)   { setJournal(data.journal);     localStorage.setItem('tw_journal',   JSON.stringify(data.journal)) }
+      if (data.drawings)  { setDrawings(data.drawings);   localStorage.setItem('tw_drawings',  JSON.stringify(data.drawings)) }
+      if (data.alerts)    { setAlerts(data.alerts);        localStorage.setItem('tw_alerts',    JSON.stringify(data.alerts)) }
+      setSyncing(false)
+    } catch (err) {
+      console.error('[Firestore loadFromCloud error]', err)
+      setSyncing('error')
     }
-    if (!data) return
-    if (data.watchlist) { setWatchlist(data.watchlist); localStorage.setItem('tw_watchlist', JSON.stringify(data.watchlist)) }
-    if (data.holdings)  { setHoldings(data.holdings);   localStorage.setItem('tw_holdings',  JSON.stringify(data.holdings)) }
-    if (data.journal)   { setJournal(data.journal);     localStorage.setItem('tw_journal',   JSON.stringify(data.journal)) }
-    if (data.drawings)  { setDrawings(data.drawings);   localStorage.setItem('tw_drawings',  JSON.stringify(data.drawings)) }
-    if (data.alerts)    { setAlerts(data.alerts);        localStorage.setItem('tw_alerts',    JSON.stringify(data.alerts)) }
-    setSyncing(false)
   }
 
   function scheduleSync() {
@@ -110,35 +106,29 @@ export default function App() {
     syncTimer.current = setTimeout(async () => {
       if (!user) return
       setSyncing(true)
-      const { error } = await supabase.from('user_data').upsert({
-        id: user.id,
-        watchlist: watchlistRef.current,
-        holdings:  holdingsRef.current,
-        journal:   journalRef.current,
-        drawings:  drawingsRef.current,
-        alerts:    alertsRef.current,
-        updated_at: new Date().toISOString(),
-      })
-      if (error) {
-        console.error('[Supabase scheduleSync error]', error.code, error.message, error.details)
-        setSyncing('error')
-      } else {
+      try {
+        await setDoc(doc(db, 'user_data', user.uid), {
+          watchlist: watchlistRef.current,
+          holdings:  holdingsRef.current,
+          journal:   journalRef.current,
+          drawings:  drawingsRef.current,
+          alerts:    alertsRef.current,
+          updated_at: new Date().toISOString(),
+        })
         setSyncing(false)
+      } catch (err) {
+        console.error('[Firestore scheduleSync error]', err)
+        setSyncing('error')
       }
     }, 1500)
   }
 
-  /* ── 監聽 Supabase 登入狀態 ── */
+  /* ── 監聽 Firebase 登入狀態 ── */
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) { setUser(session.user); loadFromCloud(session.user.id) }
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user ?? null
+    return onAuthStateChanged(auth, (u) => {
       setUser(u)
-      if (u) loadFromCloud(u.id)
+      if (u) loadFromCloud(u.uid)
     })
-    return () => subscription.unsubscribe()
   }, [])
 
   /* ── 自動同步到 localStorage + 雲端 ── */
@@ -203,7 +193,7 @@ export default function App() {
 
   /* ── 登出 ── */
   async function handleLogout() {
-    await supabase.auth.signOut()
+    await signOut(auth)
     setUser(null)
   }
 
@@ -344,8 +334,8 @@ export default function App() {
             <button className="sync-logout" onClick={handleLogout}>登出</button>
           </>
         ) : (
-          <button className="sync-login-btn" onClick={() => setShowAuth(true)}>
-            ☁ 登入以同步雲端
+          <button className="sync-login-btn" onClick={loginWithGoogle}>
+            ☁ Google 登入同步雲端
           </button>
         )}
       </div>
@@ -364,6 +354,7 @@ export default function App() {
             )}
           </button>
         ))}
+        <AuthBar onUserChange={setUser} />
       </div>
 
       {/* ── 內容 ── */}
@@ -458,7 +449,7 @@ export default function App() {
       )}
 
       {/* ── 登入 Modal ── */}
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+      {/* AuthModal removed — using Firebase Google login */}
 
       {/* ── 警示 Modal ── */}
       {showAlerts && (
