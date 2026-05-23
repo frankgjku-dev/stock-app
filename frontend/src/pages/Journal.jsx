@@ -36,7 +36,6 @@ export default function Journal({ trades, onAdd, onUpdate, onDelete }) {
   const [form,     setForm]     = useState(EMPTY_FORM)
   const [editId,   setEditId]   = useState(null)
   const [showMethod, setShowMethod] = useState(true)
-  const skipSaveRef = useRef(false)
 
   // 連續虧損偵測
   const consecutiveLosses = useMemo(() => {
