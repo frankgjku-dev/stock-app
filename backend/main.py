@@ -285,7 +285,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                                 if _ma5_3ago > 0 else 0.0)
                 ma5_cooling = ma5_slope_3d <= 0.5  # 微幅下彎/持平/角度降溫 ✅；急速上彎 ❌
                 bull_bar    = cur_c > float(op[i])  # 站回當根必須是漲K（收 > 開）
-                if (first_cross and 11.0 <= pb_pct <= 20.0
+                if (first_cross and 7.0 <= pb_pct <= 25.0
                         and vol_ok and prev_hi_ok and bull_bar
                         and ma_ok and swing_ma_ok and hl_count >= 1
                         and ma5_cooling and pb_bars >= 3):
@@ -788,14 +788,14 @@ def generate_hl5ma_recommendation(r: dict) -> dict:
     if entry_ok:
         stop = pb_low * 0.98 if pb_low else close * 0.93
         return make("buy_now", "⚡ 站回買點", "high",
-                    f"站回均線且收盤突破前日高點，回檔深度 {pb_pct:.1f}%（符合 11-20% 標準），"
+                    f"站回均線且收盤突破前日高點，回檔深度 {pb_pct:.1f}%（符合 7-25% 標準），"
                     f"放量確認，站上 5/10/20/60MA。RS {rs:.0f}。進場：{close}，停損：回檔低點 -2%（{round(stop,2)}）。",
                     entry=close, stop=stop)
 
     # 回檔中
     if in_pb:
-        if 11.0 <= pb_pct <= 20.0:
-            hint    = f"⚠️ 回檔 {pb_pct:.1f}% 符合範圍（11-20%），等站回均線放量突破前日高"
+        if 7.0 <= pb_pct <= 25.0:
+            hint    = f"⚠️ 回檔 {pb_pct:.1f}% 符合範圍（7-25%），等站回均線放量突破前日高"
             urgency = "medium"
         elif pb_pct < 11.0:
             hint    = f"回檔尚淺（{pb_pct:.1f}%），需達 11% 以上"
@@ -2713,7 +2713,7 @@ async def run_backtest(
                         ma5_cooling  = ma5_slope_3d <= 0.5
                         bull_bar     = float(closes[i]) > float(opens[i])  # 站回當根必須是漲K
                         if (not in_trade and first_cross and trend_ok(i)
-                                and 11.0 <= pb_pct <= 20.0
+                                and 7.0 <= pb_pct <= 25.0
                                 and vol_ok and prev_hi_ok and bull_bar
                                 and ma_ok and swing_ma_ok and hl_count >= 1
                                 and ma5_cooling and pb_bars >= 3):
