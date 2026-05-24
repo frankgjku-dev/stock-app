@@ -268,9 +268,16 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                          and cur_c >= _ma20v and cur_c >= _ma60v)
                 swing_ma_ok = (swing_high >= _ma5v and swing_high >= _ma10v
                                and swing_high >= _ma20v and swing_high >= _ma60v)
+                # 5MA 降溫條件：回檔期間 5MA 不可急速上彎
+                # 取進場前 3 日的 5MA 斜率（相對 %），> 0.5% 視為急速上彎
+                _ma5_3ago = float(ma5[i - 3]) if i >= 3 and not np.isnan(ma5[i - 3]) else _ma5v
+                ma5_slope_3d = ((_ma5v - _ma5_3ago) / _ma5_3ago * 100
+                                if _ma5_3ago > 0 else 0.0)
+                ma5_cooling = ma5_slope_3d <= 0.5  # 微幅下彎/持平/角度降溫 ✅；急速上彎 ❌
                 if (first_cross and 11.0 <= pb_pct <= 20.0
                         and vol_ok and prev_hi_ok
-                        and ma_ok and swing_ma_ok and hl_count >= 1):
+                        and ma_ok and swing_ma_ok and hl_count >= 1
+                        and ma5_cooling):
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
@@ -288,6 +295,14 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         cur_pb_low = round(pb_low, 2)
 
     last_date = str(dates[n - 1])[:10]
+    # 當日 5MA 3 日斜率（供前端顯示降溫狀態）
+    cur_ma5_slope = 0.0
+    if len(ma5) >= 4 and not np.isnan(ma5[-1]) and not np.isnan(ma5[-4]):
+        _ref = float(ma5[-4])
+        if _ref > 0:
+            cur_ma5_slope = round((float(ma5[-1]) - _ref) / _ref * 100, 2)
+
+    last_date = str(dates[n - 1])[:10]
     return {
         "valid":        True,
         "entry":        entry and entry_date == last_date,
@@ -298,6 +313,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         "pb_low":       cur_pb_low,
         "ma5":          round(cur_ma5_val, 2),
         "hl_count":     hl_count,
+        "ma5_slope_3d": cur_ma5_slope,   # 5MA 3日斜率 %，>0.5 = 急速上彎
     }
 
 
@@ -2669,10 +2685,15 @@ async def run_backtest(
                         swing_ma_ok = (_m5 > 0 and _m10 > 0 and _m20 > 0 and _m60 > 0
                                        and swing_high >= _m5 and swing_high >= _m10
                                        and swing_high >= _m20 and swing_high >= _m60)
+                        # 5MA 降溫條件：回檔期間 5MA 不可急速上彎
+                        _m5_3ago = float(ma5_a_loc[i - 3]) if i >= 3 and not np.isnan(ma5_a_loc[i - 3]) else _m5
+                        ma5_slope_3d = ((_m5 - _m5_3ago) / _m5_3ago * 100 if _m5_3ago > 0 else 0.0)
+                        ma5_cooling  = ma5_slope_3d <= 0.5
                         if (not in_trade and first_cross and trend_ok(i)
                                 and 11.0 <= pb_pct <= 20.0
                                 and vol_ok and prev_hi_ok
-                                and ma_ok and swing_ma_ok and hl_count >= 1):
+                                and ma_ok and swing_ma_ok and hl_count >= 1
+                                and ma5_cooling):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
