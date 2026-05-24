@@ -1,5 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { API_BASE } from '../config'
+
+const BT_DEFAULTS = {
+  period: '3y', stopPct: 8, targetPct: 20, holdDays: 60,
+  strategy: 'vcp', selConds: [],
+}
+function loadBtState() {
+  try { return { ...BT_DEFAULTS, ...JSON.parse(localStorage.getItem('tw_backtest_state') || '{}') } }
+  catch { return BT_DEFAULTS }
+}
+function loadBtResult() {
+  try { return JSON.parse(localStorage.getItem('tw_backtest_result') || 'null') }
+  catch { return null }
+}
 
 const PERIODS = [
   { label: '1 年', value: '1y' },
@@ -21,17 +34,30 @@ const TREND_CONDITIONS = [
 ]
 
 export default function Backtest({ symbol: defaultSymbol = '2330', onViewTrade }) {
+  const initS = loadBtState()
   const [symbol,     setSymbol]     = useState(defaultSymbol)
-  const [period,     setPeriod]     = useState('3y')
-  const [stopPct,    setStopPct]    = useState(8)
-  const [targetPct,  setTargetPct]  = useState(20)
-  const [holdDays,   setHoldDays]   = useState(60)
-  const [strategy,   setStrategy]   = useState('vcp')       // "vcp" | "hl5ma"
-  const [selConds,   setSelConds]   = useState(new Set())   // 選中的條件 id
-  const [showConds,  setShowConds]  = useState(false)       // 展開條件面板
+  const [period,     setPeriod]     = useState(initS.period)
+  const [stopPct,    setStopPct]    = useState(initS.stopPct)
+  const [targetPct,  setTargetPct]  = useState(initS.targetPct)
+  const [holdDays,   setHoldDays]   = useState(initS.holdDays)
+  const [strategy,   setStrategy]   = useState(initS.strategy)
+  const [selConds,   setSelConds]   = useState(new Set(initS.selConds))
+  const [showConds,  setShowConds]  = useState(false)
   const [loading,    setLoading]    = useState(false)
-  const [result,     setResult]     = useState(null)
+  const [result,     setResult]     = useState(loadBtResult)
   const [error,      setError]      = useState(null)
+
+  // 參數變動自動存檔
+  useEffect(() => {
+    localStorage.setItem('tw_backtest_state', JSON.stringify({
+      period, stopPct, targetPct, holdDays, strategy, selConds: [...selConds],
+    }))
+  }, [period, stopPct, targetPct, holdDays, strategy, selConds])
+
+  // 結果變動自動存檔
+  useEffect(() => {
+    if (result) localStorage.setItem('tw_backtest_result', JSON.stringify(result))
+  }, [result])
 
   function toggleCond(id) {
     setSelConds(prev => {
