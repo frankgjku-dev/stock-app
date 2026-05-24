@@ -197,6 +197,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         return empty
 
     c   = df["Close"].values.astype(float)
+    op  = df["Open"].values.astype(float)
     hi  = df["High"].values.astype(float)
     lo  = df["Low"].values.astype(float)
     v   = df["Volume"].values.astype(float)
@@ -263,8 +264,13 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
 
                 avg_vol_2  = float(np.mean(v[max(0, i - 2): i])) if i >= 2 else cur_v
                 vol_ok     = cur_v > avg_vol_2
-                # 超越前一天K棒：今日Low > 前日High（整根K棒完全在前日K棒之上，無重疊）
-                prev_hi_ok = cur_l > float(hi[i - 1]) if i >= 1 else False
+                # 今日實體底部 > 前日K棒低點 + 前日K棒範圍 × 1/3（實體站上前日下三分之一以上）
+                if i >= 1:
+                    _prev_range = float(hi[i - 1]) - float(lo[i - 1])
+                    _body_bot   = min(cur_c, float(op[i]))
+                    prev_hi_ok  = _body_bot > float(lo[i - 1]) + _prev_range / 3
+                else:
+                    prev_hi_ok  = False
                 # 站上 5/10/20/60 均線（收盤 + 波段高點均需站上）
                 _ma5v  = float(ma5[i]);  _ma10v = float(ma10[i])
                 _ma20v = float(ma20[i]); _ma60v = float(ma60[i])
@@ -2463,6 +2469,7 @@ async def run_backtest(
     date_col = "Date" if "Date" in df_raw.columns else "Datetime"
     dates  = [str(d)[:10] for d in df_raw[date_col]]
     closes = df_raw["Close"].values.astype(float)
+    opens  = df_raw["Open"].values.astype(float)
     highs  = df_raw["High"].values.astype(float)
     lows   = df_raw["Low"].values.astype(float)
     vols   = df_raw["Volume"].values.astype(float)
@@ -2682,8 +2689,13 @@ async def run_backtest(
 
                         avg_vol    = float(np.mean(vols[max(0, i - 2): i])) if i >= 2 else vol
                         vol_ok     = vol >= avg_vol
-                        # 超越前一天K棒：今日Low > 前日High（整根K棒完全在前日K棒之上，無重疊）
-                        prev_hi_ok = float(lows[i]) > float(highs[i - 1]) if i >= 1 else False
+                        # 今日實體底部 > 前日K棒低點 + 前日K棒範圍 × 1/3
+                        if i >= 1:
+                            _prev_range = float(highs[i - 1]) - float(lows[i - 1])
+                            _body_bot   = min(float(closes[i]), float(opens[i]))
+                            prev_hi_ok  = _body_bot > float(lows[i - 1]) + _prev_range / 3
+                        else:
+                            prev_hi_ok  = False
                         # 站上 5/10/20/60 均線（收盤 + 波段高點均需站上）
                         _m5  = float(ma5_a_loc[i]) if not np.isnan(ma5_a_loc[i]) else 0.0
                         _m10 = float(ma10_a[i]) if not np.isnan(ma10_a[i]) else 0.0
