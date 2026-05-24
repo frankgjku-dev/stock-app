@@ -416,8 +416,8 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     # 此時縮小搜尋窗口到近 60 個交易日，尋找最新的整理型態
     if vcp_seq and cur_close > vcp_seq[-1]["peak"] * 1.10:
         # peak_idx 的範圍是 [0, _VCP_LOOKBACK-1]；
-        # 「近 60 日」= lookback 視窗最後 60 根 → peak_idx >= (lookback-60)
-        cutoff = max(0, 100 - 60)   # = 40，即只保留最近 60 根裡的高點
+        # 「近 80 日」= lookback 視窗最後 80 根 → peak_idx >= (lookback-80)
+        cutoff = max(0, 100 - 80)   # = 20，即保留最近 80 根裡的高點
         recent_pbs = [pb for pb in all_pbs if pb["peak_idx"] >= cutoff]
         if recent_pbs:
             new_seq = _best_contraction_sequence(recent_pbs)
@@ -437,10 +437,10 @@ def detect_vcp(df: pd.DataFrame, cur_close: float, ma50: float, high52: float) -
     base_days = 0
     if vcp_seq:
         base_days = int(vcp_seq[-1]["trough_idx"] - vcp_seq[0]["peak_idx"])
-    base_valid = 15 <= base_days <= 65
+    base_valid = 15 <= base_days <= 120
 
-    # ── 整理期過長（>65 交易日）→ 作廢，不算有效 VCP ─────────
-    if base_days > 65:
+    # ── 整理期過長（>120 交易日）→ 作廢，不算有效 VCP ─────────
+    if base_days > 120:
         vcp_seq = []; num_cont = 0; depths = []; max_depth = 0.0; last_depth = 100.0
         base_days = 0; base_valid = False
 
