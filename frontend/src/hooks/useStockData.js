@@ -30,7 +30,12 @@ export default function useStockData(symbol, interval, period) {
       for (let i = 0; i < 3; i++) {
         try {
           if (i > 0) await new Promise(r => setTimeout(r, 2000))
-          const res  = await fetch(url)
+          const res = await fetch(url)
+          const ct  = res.headers.get('content-type') || ''
+          if (!ct.includes('application/json')) {
+            lastErr = '後端服務啟動中，請稍候再試…'
+            continue
+          }
           const data = await res.json()
           if (data.candles?.length) {
             setCandles(data.candles)
@@ -38,9 +43,9 @@ export default function useStockData(symbol, interval, period) {
             setLoading(false)
             return
           }
-          lastErr = data.error || 'No data'
+          lastErr = data.error || '查無資料'
         } catch (e) {
-          lastErr = e.message
+          lastErr = '網路錯誤，請稍後重試'
         }
       }
       setError(lastErr)
@@ -54,7 +59,9 @@ export default function useStockData(symbol, interval, period) {
 
     async function fetchQuote() {
       try {
-        const r = await fetch(`${API_BASE}/api/stocks/${symbol}/quote`)
+        const r  = await fetch(`${API_BASE}/api/stocks/${symbol}/quote`)
+        const ct = r.headers.get('content-type') || ''
+        if (!ct.includes('application/json')) return
         const data = await r.json()
         if (!data.error) setQuote(data)
       } catch { /* network error — keep last quote */ }
