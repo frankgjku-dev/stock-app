@@ -288,7 +288,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 if (first_cross and 7.0 <= pb_pct <= 25.0
                         and vol_ok and prev_hi_ok and bull_bar
                         and ma_ok and swing_ma_ok and hl_count >= 1
-                        and ma5_cooling and pb_bars >= 3):
+                        and ma5_cooling):
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
@@ -2716,7 +2716,7 @@ async def run_backtest(
                                 and 7.0 <= pb_pct <= 25.0
                                 and vol_ok and prev_hi_ok and bull_bar
                                 and ma_ok and swing_ma_ok and hl_count >= 1
-                                and ma5_cooling and pb_bars >= 3):
+                                and ma5_cooling):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
