@@ -50,7 +50,8 @@ export default function App() {
   const [symbol,     setSymbol]     = useState('2330')
   const [interval,   setInterval]   = useState('1d')
   const [period,     setPeriod]     = useState('1y')
-  const [btMarkers,  setBtMarkers]  = useState(null)  // 回測交易標記
+  const [btMarkersData, setBtMarkersData] = useState(null) // { symbol, markers[] }
+  const btMarkers = btMarkersData?.symbol === symbol ? btMarkersData.markers : null
   const [activeTool, setActiveTool] = useState('cursor')
   const [drawColor,  setDrawColor]  = useState('#b86e2a')
   const [indicators, setIndicators] = useState({
@@ -212,7 +213,6 @@ export default function App() {
 
   const handleIntervalChange = useCallback((iv, p) => {
     setInterval(iv); setPeriod(p)
-    setBtMarkers(null)   // 切換週期時清除回測標記
   }, [])
 
   // 從回測交易紀錄跳到 K 線圖並標記買賣點
@@ -224,22 +224,25 @@ export default function App() {
     setSymbol(sym)
     setInterval('1d')
     setPeriod(p)
-    setBtMarkers([
-      {
-        time:     trade.entry_date,
-        position: 'belowBar',
-        color:    '#4caf93',
-        shape:    'arrowUp',
-        text:     `買入 ${trade.entry_price}`,
-      },
-      {
-        time:     trade.exit_date,
-        position: 'aboveBar',
-        color:    trade.pnl_pct > 0 ? '#4caf93' : '#c85a50',
-        shape:    'arrowDown',
-        text:     `${trade.exit_reason} ${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct}%`,
-      },
-    ])
+    setBtMarkersData({
+      symbol: sym,
+      markers: [
+        {
+          time:     trade.entry_date,
+          position: 'belowBar',
+          color:    '#4caf93',
+          shape:    'arrowUp',
+          text:     `買入 ${trade.entry_price}`,
+        },
+        {
+          time:     trade.exit_date,
+          position: 'aboveBar',
+          color:    trade.pnl_pct > 0 ? '#4caf93' : '#c85a50',
+          shape:    'arrowDown',
+          text:     `${trade.exit_reason} ${trade.pnl_pct > 0 ? '+' : ''}${trade.pnl_pct}%`,
+        },
+      ],
+    })
     setTab('chart')
   }, [])
   const toggleIndicator = useCallback((key) => {
@@ -312,7 +315,7 @@ export default function App() {
       {tab === 'chart' ? (
         <TopBar
           symbol={symbol} quote={quote} interval={interval} period={period}
-          onSymbolChange={(s) => { setSymbol(s); setBtMarkers(null) }} onIntervalChange={handleIntervalChange}
+          onSymbolChange={setSymbol} onIntervalChange={handleIntervalChange}
           watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
         />
       ) : (
