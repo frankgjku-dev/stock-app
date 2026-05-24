@@ -43,22 +43,37 @@ function vcpColor(score) {
   return null
 }
 
+// 篩選設定預設值
+const FILTER_DEFAULTS = {
+  minRS: 70, minPassed: 6, vcpOnly: false, minVcp: 3,
+  ppOnly: false, hl5maOnly: false, favOnly: false,
+  urgencyFilter: 'all', sortKey: 'rs_rating', sortAsc: false,
+}
+
+function loadFilters() {
+  try { return { ...FILTER_DEFAULTS, ...JSON.parse(localStorage.getItem('tw_screener_filters') || '{}') } }
+  catch { return FILTER_DEFAULTS }
+}
+
 export default function Screener({ onSelectStock, watchlist = { groups:[] }, onToggleInGroup }) {
   const [status,    setStatus]    = useState(null)
   const [results,   setResults]   = useState([])
   const [progress,  setProgress]  = useState(0)
   const [total,     setTotal]     = useState(0)
   const [universe,  setUniverse]  = useState(null)   // { count, source }
-  const [minRS,     setMinRS]     = useState(70)
-  const [minPassed, setMinPassed] = useState(6)
-  const [vcpOnly,   setVcpOnly]   = useState(false)
-  const [minVcp,    setMinVcp]    = useState(3)
-  const [ppOnly,    setPpOnly]    = useState(false)
-  const [hl5maOnly, setHl5maOnly] = useState(false)
-  const [favOnly,   setFavOnly]   = useState(false)
-  const [urgencyFilter, setUrgencyFilter] = useState('all')  // all / high / medium
-  const [sortKey,   setSortKey]   = useState('rs_rating')
-  const [sortAsc,   setSortAsc]   = useState(false)
+
+  // 篩選條件從 localStorage 還原
+  const initF = loadFilters()
+  const [minRS,     setMinRS]     = useState(initF.minRS)
+  const [minPassed, setMinPassed] = useState(initF.minPassed)
+  const [vcpOnly,   setVcpOnly]   = useState(initF.vcpOnly)
+  const [minVcp,    setMinVcp]    = useState(initF.minVcp)
+  const [ppOnly,    setPpOnly]    = useState(initF.ppOnly)
+  const [hl5maOnly, setHl5maOnly] = useState(initF.hl5maOnly)
+  const [favOnly,   setFavOnly]   = useState(initF.favOnly)
+  const [urgencyFilter, setUrgencyFilter] = useState(initF.urgencyFilter)
+  const [sortKey,   setSortKey]   = useState(initF.sortKey)
+  const [sortAsc,   setSortAsc]   = useState(initF.sortAsc)
   const [market,    setMarket]    = useState(null)
   const [detail,       setDetail]       = useState(null)   // symbol of open drawer
   const [detailData,   setDetailData]   = useState(null)   // full row data for drawer
@@ -68,6 +83,14 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
   const pollRef = useRef(null)
 
   const allFavSymbols = (watchlist.groups || []).flatMap(g => g.stocks)
+
+  // 篩選條件變動時自動存進 localStorage
+  useEffect(() => {
+    localStorage.setItem('tw_screener_filters', JSON.stringify({
+      minRS, minPassed, vcpOnly, minVcp, ppOnly,
+      hl5maOnly, favOnly, urgencyFilter, sortKey, sortAsc,
+    }))
+  }, [minRS, minPassed, vcpOnly, minVcp, ppOnly, hl5maOnly, favOnly, urgencyFilter, sortKey, sortAsc])
 
   useEffect(() => {
     fetch(`${API_BASE}/api/market/status`)
