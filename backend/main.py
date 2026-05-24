@@ -208,7 +208,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
 
     _s = pd.Series(c)
     ma5  = _s.rolling(5,  min_periods=5).mean().values
-    ma10 = _s.rolling(10, min_periods=10).mean().values
+    ma15 = _s.rolling(15, min_periods=15).mean().values
     ma20 = _s.rolling(20, min_periods=20).mean().values
     ma60 = _s.rolling(60, min_periods=60).mean().values
 
@@ -271,12 +271,15 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                     prev_hi_ok  = _body_bot > float(lo[i - 1]) + _prev_range / 3
                 else:
                     prev_hi_ok  = False
-                # 站上 5/10/20/60 均線（收盤 + 波段高點均需站上）
-                _ma5v  = float(ma5[i]);  _ma10v = float(ma10[i])
-                _ma20v = float(ma20[i]); _ma60v = float(ma60[i])
-                ma_ok = (cur_c >= _ma5v and cur_c >= _ma10v
-                         and cur_c >= _ma20v and cur_c >= _ma60v)
-                swing_ma_ok = (swing_high >= _ma5v and swing_high >= _ma10v
+                # 站上 5/15/20/60 均線（收盤 + 波段高點均需站上）
+                _ma5v  = float(ma5[i])
+                _ma15v = float(ma15[i]) if not np.isnan(ma15[i]) else 0.0
+                _ma20v = float(ma20[i]) if not np.isnan(ma20[i]) else 0.0
+                _ma60v = float(ma60[i]) if not np.isnan(ma60[i]) else 0.0
+                ma_ok = (_ma15v > 0 and _ma20v > 0 and _ma60v > 0
+                         and cur_c >= _ma15v and cur_c >= _ma20v and cur_c >= _ma60v)
+                swing_ma_ok = (_ma15v > 0 and _ma20v > 0 and _ma60v > 0
+                               and swing_high >= _ma5v and swing_high >= _ma15v
                                and swing_high >= _ma20v and swing_high >= _ma60v)
                 # 5MA 降溫條件：回檔期間 5MA 不可急速上彎
                 # 取進場前 3 日的 5MA 斜率（相對 %），> 0.5% 視為急速上彎
@@ -2486,7 +2489,7 @@ async def run_backtest(
     cs = pd.Series(closes)
     hs = pd.Series(highs)
     ls = pd.Series(lows)
-    ma10_a   = cs.rolling(10,  min_periods=10).mean().values
+    ma15_a   = cs.rolling(15,  min_periods=15).mean().values
     ma20_a   = cs.rolling(20,  min_periods=20).mean().values
     ma60_a   = cs.rolling(60,  min_periods=60).mean().values
     ma50_a   = cs.rolling(50,  min_periods=1).mean().values
@@ -2697,15 +2700,15 @@ async def run_backtest(
                             prev_hi_ok  = _body_bot > float(lows[i - 1]) + _prev_range / 3
                         else:
                             prev_hi_ok  = False
-                        # 站上 5/10/20/60 均線（收盤 + 波段高點均需站上）
+                        # 站上 5/15/20/60 均線（收盤 + 波段高點均需站上）
                         _m5  = float(ma5_a_loc[i]) if not np.isnan(ma5_a_loc[i]) else 0.0
-                        _m10 = float(ma10_a[i]) if not np.isnan(ma10_a[i]) else 0.0
+                        _m15 = float(ma15_a[i]) if not np.isnan(ma15_a[i]) else 0.0
                         _m20 = float(ma20_a[i]) if not np.isnan(ma20_a[i]) else 0.0
                         _m60 = float(ma60_a[i]) if not np.isnan(ma60_a[i]) else 0.0
-                        ma_ok = (_m10 > 0 and _m20 > 0 and _m60 > 0
-                                 and c >= _m10 and c >= _m20 and c >= _m60)
-                        swing_ma_ok = (_m5 > 0 and _m10 > 0 and _m20 > 0 and _m60 > 0
-                                       and swing_high >= _m5 and swing_high >= _m10
+                        ma_ok = (_m15 > 0 and _m20 > 0 and _m60 > 0
+                                 and c >= _m15 and c >= _m20 and c >= _m60)
+                        swing_ma_ok = (_m5 > 0 and _m15 > 0 and _m20 > 0 and _m60 > 0
+                                       and swing_high >= _m5 and swing_high >= _m15
                                        and swing_high >= _m20 and swing_high >= _m60)
                         # 5MA 降溫條件：回檔期間 5MA 不可急速上彎
                         _m5_3ago = float(ma5_a_loc[i - 3]) if i >= 3 and not np.isnan(ma5_a_loc[i - 3]) else _m5
