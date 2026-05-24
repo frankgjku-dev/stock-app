@@ -216,6 +216,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
     pb_low       = float('inf')
     prev_pb_low  = 0.0   # 上一次回檔的最低點（用於判斷 HL）
     hl_count     = 0     # 已確認的 Higher Low 數量
+    pb_bars      = 0     # 本次回檔累積根數
 
     entry       = False
     entry_price = 0.0
@@ -233,10 +234,12 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         if state == "above":
             swing_high = max(swing_high, cur_h)
             if cur_c < cur_ma5:
-                state  = "below"
-                pb_low = cur_l
+                state   = "below"
+                pb_low  = cur_l
+                pb_bars = 1      # 第一根回檔
 
         elif state == "below":
+            pb_bars += 1
             if cur_l < pb_low:
                 pb_low = cur_l
             # 跌破前低 → 本次 HL 結構失效，重置計數
@@ -277,7 +280,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 if (first_cross and 11.0 <= pb_pct <= 20.0
                         and vol_ok and prev_hi_ok
                         and ma_ok and swing_ma_ok and hl_count >= 1
-                        and ma5_cooling):
+                        and ma5_cooling and pb_bars >= 3):
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
@@ -285,6 +288,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 state      = "above"
                 swing_high = cur_h
                 pb_low     = float('inf')
+                pb_bars    = 0
 
     # ── 當日狀態 ─────────────────────────────────────────
     cur_ma5_val = float(ma5[-1]) if not np.isnan(ma5[-1]) else 0.0
@@ -2605,6 +2609,7 @@ async def run_backtest(
             pb_low       = float('inf')
             prev_pb_low  = 0.0
             hl_count     = 0
+            pb_bars      = 0     # 本次回檔累積根數
 
             # ── 持倉 ────────────────────────────────────
             equity      = 100.0
@@ -2650,8 +2655,10 @@ async def run_backtest(
                     if c < ma5:
                         hl_state = "below"
                         pb_low   = lo
+                        pb_bars  = 1   # 第一根回檔
 
                 elif hl_state == "below":
+                    pb_bars += 1
                     if lo < pb_low:
                         pb_low = lo
                     # 跌破前低 → 本次 HL 結構失效，重置計數
@@ -2693,7 +2700,7 @@ async def run_backtest(
                                 and 11.0 <= pb_pct <= 20.0
                                 and vol_ok and prev_hi_ok
                                 and ma_ok and swing_ma_ok and hl_count >= 1
-                                and ma5_cooling):
+                                and ma5_cooling and pb_bars >= 3):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
@@ -2703,6 +2710,7 @@ async def run_backtest(
                         hl_state   = "above"
                         swing_high = hi
                         pb_low     = float('inf')
+                        pb_bars    = 0
 
                 # ── 淨值曲線 ─────────────────────────────
                 if in_trade:
