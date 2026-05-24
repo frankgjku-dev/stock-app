@@ -284,8 +284,9 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 ma5_slope_3d = ((_ma5v - _ma5_3ago) / _ma5_3ago * 100
                                 if _ma5_3ago > 0 else 0.0)
                 ma5_cooling = ma5_slope_3d <= 0.5  # 微幅下彎/持平/角度降溫 ✅；急速上彎 ❌
+                bull_bar    = cur_c > float(op[i])  # 站回當根必須是漲K（收 > 開）
                 if (first_cross and 11.0 <= pb_pct <= 20.0
-                        and vol_ok and prev_hi_ok
+                        and vol_ok and prev_hi_ok and bull_bar
                         and ma_ok and swing_ma_ok and hl_count >= 1
                         and ma5_cooling and pb_bars >= 3):
                     entry       = True
@@ -2710,9 +2711,10 @@ async def run_backtest(
                         _m5_3ago = float(ma5_a_loc[i - 3]) if i >= 3 and not np.isnan(ma5_a_loc[i - 3]) else _m5
                         ma5_slope_3d = ((_m5 - _m5_3ago) / _m5_3ago * 100 if _m5_3ago > 0 else 0.0)
                         ma5_cooling  = ma5_slope_3d <= 0.5
+                        bull_bar     = float(closes[i]) > float(opens[i])  # 站回當根必須是漲K
                         if (not in_trade and first_cross and trend_ok(i)
                                 and 11.0 <= pb_pct <= 20.0
-                                and vol_ok and prev_hi_ok
+                                and vol_ok and prev_hi_ok and bull_bar
                                 and ma_ok and swing_ma_ok and hl_count >= 1
                                 and ma5_cooling and pb_bars >= 3):
                             in_trade    = True
