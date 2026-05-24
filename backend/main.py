@@ -217,6 +217,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
     prev_pb_low  = 0.0   # 上一次回檔的最低點（用於判斷 HL）
     hl_count     = 0     # 已確認的 Higher Low 數量
     pb_bars      = 0     # 本次回檔累積根數
+    pb_high_list = []    # 回檔期間每根K棒的 High（用於階梯式判定）
 
     entry       = False
     entry_price = 0.0
@@ -234,12 +235,14 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
         if state == "above":
             swing_high = max(swing_high, cur_h)
             if cur_c < cur_ma5:
-                state   = "below"
-                pb_low  = cur_l
-                pb_bars = 1      # 第一根回檔
+                state        = "below"
+                pb_low       = cur_l
+                pb_bars      = 1
+                pb_high_list = [cur_h]   # 第一根回檔的 High
 
         elif state == "below":
             pb_bars += 1
+            pb_high_list.append(cur_h)   # 持續追蹤每根 High
             if cur_l < pb_low:
                 pb_low = cur_l
             # 跌破前低 → 本次 HL 結構失效，重置計數
@@ -277,18 +280,27 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 ma5_slope_3d = ((_ma5v - _ma5_3ago) / _ma5_3ago * 100
                                 if _ma5_3ago > 0 else 0.0)
                 ma5_cooling = ma5_slope_3d <= 0.5  # 微幅下彎/持平/角度降溫 ✅；急速上彎 ❌
+                # 階梯式下跌：回檔期間 High 整體向下 + ≥2/3 相鄰對為 Lower High
+                pairs   = len(pb_high_list) - 1
+                lower_h = sum(1 for j in range(1, len(pb_high_list))
+                              if pb_high_list[j] < pb_high_list[j - 1])
+                is_staircase = (pairs >= 2
+                                and pb_high_list[-1] < pb_high_list[0]
+                                and lower_h * 3 >= pairs * 2)
                 if (first_cross and 11.0 <= pb_pct <= 20.0
                         and vol_ok and prev_hi_ok
                         and ma_ok and swing_ma_ok and hl_count >= 1
-                        and ma5_cooling and pb_bars >= 3):
+                        and ma5_cooling and pb_bars >= 3
+                        and is_staircase):
                     entry       = True
                     entry_price = round(cur_c, 2)
                     entry_date  = str(dates[i])[:10]
                 # 不論是否進場，回到 above 繼續追蹤
-                state      = "above"
-                swing_high = cur_h
-                pb_low     = float('inf')
-                pb_bars    = 0
+                state        = "above"
+                swing_high   = cur_h
+                pb_low       = float('inf')
+                pb_bars      = 0
+                pb_high_list = []
 
     # ── 當日狀態 ─────────────────────────────────────────
     cur_ma5_val = float(ma5[-1]) if not np.isnan(ma5[-1]) else 0.0
@@ -2610,6 +2622,7 @@ async def run_backtest(
             prev_pb_low  = 0.0
             hl_count     = 0
             pb_bars      = 0     # 本次回檔累積根數
+            pb_high_list = []    # 回檔期間每根 High（階梯式判定）
 
             # ── 持倉 ────────────────────────────────────
             equity      = 100.0
@@ -2653,12 +2666,14 @@ async def run_backtest(
                 if hl_state == "above":
                     swing_high = max(swing_high, hi)
                     if c < ma5:
-                        hl_state = "below"
-                        pb_low   = lo
-                        pb_bars  = 1   # 第一根回檔
+                        hl_state     = "below"
+                        pb_low       = lo
+                        pb_bars      = 1
+                        pb_high_list = [hi]   # 第一根回檔 High
 
                 elif hl_state == "below":
                     pb_bars += 1
+                    pb_high_list.append(hi)   # 追蹤每根 High
                     if lo < pb_low:
                         pb_low = lo
                     # 跌破前低 → 本次 HL 結構失效，重置計數
@@ -2696,21 +2711,30 @@ async def run_backtest(
                         _m5_3ago = float(ma5_a_loc[i - 3]) if i >= 3 and not np.isnan(ma5_a_loc[i - 3]) else _m5
                         ma5_slope_3d = ((_m5 - _m5_3ago) / _m5_3ago * 100 if _m5_3ago > 0 else 0.0)
                         ma5_cooling  = ma5_slope_3d <= 0.5
+                        # 階梯式下跌判定
+                        _pairs   = len(pb_high_list) - 1
+                        _lower_h = sum(1 for j in range(1, len(pb_high_list))
+                                       if pb_high_list[j] < pb_high_list[j - 1])
+                        is_staircase = (_pairs >= 2
+                                        and pb_high_list[-1] < pb_high_list[0]
+                                        and _lower_h * 3 >= _pairs * 2)
                         if (not in_trade and first_cross and trend_ok(i)
                                 and 11.0 <= pb_pct <= 20.0
                                 and vol_ok and prev_hi_ok
                                 and ma_ok and swing_ma_ok and hl_count >= 1
-                                and ma5_cooling and pb_bars >= 3):
+                                and ma5_cooling and pb_bars >= 3
+                                and is_staircase):
                             in_trade    = True
                             entry_price = c
                             entry_date  = dates[i]
                             entry_idx   = i
                             entry_ref   = round(pb_low, 2)
                         # 回到 above，重置
-                        hl_state   = "above"
-                        swing_high = hi
-                        pb_low     = float('inf')
-                        pb_bars    = 0
+                        hl_state     = "above"
+                        swing_high   = hi
+                        pb_low       = float('inf')
+                        pb_bars      = 0
+                        pb_high_list = []
 
                 # ── 淨值曲線 ─────────────────────────────
                 if in_trade:
