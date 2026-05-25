@@ -2304,12 +2304,21 @@ async def analyze_stock(symbol: str):
     try:
         loop = asyncio.get_event_loop()
 
-        # ── 0. 同步抓 yfinance info（產業 / 公司簡介）─────────────
-        yf_info = await loop.run_in_executor(executor, _yf_info_sync, symbol)
-        sector_en   = yf_info.get("sector",   "") or ""
-        industry_en = yf_info.get("industry", "") or ""
-        sector_zh   = _SECTOR_ZH.get(sector_en,   sector_en)
-        industry_zh = _INDUSTRY_ZH.get(industry_en, industry_en)
+        # ── 0. 同步抓 yfinance info（產業）─────────────────────────
+        # 若 yfinance info 抓取失敗/超時，靜默跳過，不影響主分析
+        sector_zh = ""
+        industry_zh = ""
+        try:
+            yf_info = await asyncio.wait_for(
+                loop.run_in_executor(executor, _yf_info_sync, symbol),
+                timeout=8.0
+            )
+            sector_en   = yf_info.get("sector",   "") or ""
+            industry_en = yf_info.get("industry", "") or ""
+            sector_zh   = _SECTOR_ZH.get(sector_en,   sector_en)
+            industry_zh = _INDUSTRY_ZH.get(industry_en, industry_en)
+        except Exception:
+            pass
 
         # ── 1. 取資料：Yahoo Chart → FinMind → TWSE ───────────────
         raw: list = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
