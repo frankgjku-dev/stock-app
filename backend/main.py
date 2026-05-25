@@ -356,9 +356,9 @@ def _best_contraction_sequence(pullbacks):
             cur  = recent[j]
             depth_ok  = cur["depth_pct"] <= prev["depth_pct"] * 0.97   # 深度縮小 ≥3%（有縮小即可）
             trough_ok = cur["trough"]    >= prev["trough"]    * 0.98   # 低點不得更低
-            # 峰頂必須在同一底部平台：相鄰兩段峰頂漲幅不可超過 15%
-            # 超過代表中間有一波大行情，屬於不同整理基礎
-            same_base = cur["peak"] <= prev["peak"] * 1.15
+            # 峰頂必須在同一底部平台：相鄰兩段峰頂漲幅不可超過 5%
+            # VCP 整理期間峰頂應持平或下降，持續創新高代表已進入新趨勢
+            same_base = cur["peak"] <= prev["peak"] * 1.05
             if depth_ok and trough_ok and same_base:
                 seq.append(cur)
         if len(seq) > len(best):
