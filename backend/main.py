@@ -1750,6 +1750,24 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
                                         "low":round(l,2),"close":round(c2,2),"volume":v})
                     except Exception: continue
 
+        # ── 日線：向 FinMind 補近 60 天，填入 Yahoo 漏掉的最近 K 棒 ──
+        if candles and interval == "1d":
+            try:
+                recent_fm = await asyncio.wait_for(
+                    loop.run_in_executor(executor, _finmind_sync, symbol, "60d"),
+                    timeout=8.0
+                )
+                if recent_fm:
+                    existing_dates = {c["time"] for c in candles}
+                    last_date      = max(existing_dates)
+                    for bar in recent_fm:
+                        if bar["time"] > last_date and bar["time"] not in existing_dates:
+                            candles.append(bar)
+                            existing_dates.add(bar["time"])
+                    candles.sort(key=lambda x: x["time"])
+            except Exception:
+                pass  # FinMind 補充失敗不影響主資料
+
         # ── 成功：存入記憶體快取 + 磁碟快取 ──────────────────────
         if candles:
             _candle_cache[cache_key] = (now, candles)
