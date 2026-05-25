@@ -192,6 +192,51 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
             </button>
           </div>
 
+          {/* 產業分析 */}
+          {(data.sector || data.industry) && data.industry_heat && (
+            <div style={{
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '14px 18px', marginBottom: 12,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 10 }}>
+                🏭 產業分析
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', marginBottom: 10 }}>
+                {data.sector && (
+                  <div>
+                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>所屬板塊　</span>
+                    <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{data.sector}</span>
+                  </div>
+                )}
+                {data.industry && (
+                  <div>
+                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>細分產業　</span>
+                    <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{data.industry}</span>
+                  </div>
+                )}
+                <div>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)' }}>產業熱度　</span>
+                  <span style={{
+                    fontSize: 13, fontWeight: 700,
+                    color: data.industry_heat.color,
+                  }}>
+                    {data.industry_heat.level} {data.industry_heat.label}
+                  </span>
+                </div>
+              </div>
+              <div style={{
+                fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6,
+                borderTop: '1px solid var(--border)', paddingTop: 8,
+              }}>
+                {data.industry_heat.note}
+                {data.industry_heat.watch
+                  ? <span style={{ marginLeft: 8, color: '#26a69a', fontWeight: 600 }}>✅ 建議關注</span>
+                  : <span style={{ marginLeft: 8, color: 'var(--text-3)' }}>⏳ 暫時觀望</span>
+                }
+              </div>
+            </div>
+          )}
+
           {/* 綜合建議 */}
           <div className="ar-rec" style={{
             background: rs.bg, border: `1px solid ${rs.border}`, borderRadius: 10, padding: '14px 18px',

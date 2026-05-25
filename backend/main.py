@@ -2218,8 +2218,98 @@ async def rs_ranking_api(symbols: str = ""):
 @app.get("/api/stocks/{symbol}/analyze")
 async def analyze_stock(symbol: str):
     """單股智能分析（完整版）：與選股頁共用 detect_vcp() + check_trend_template()"""
+
+    # 產業英文→中文對照
+    _SECTOR_ZH = {
+        "Technology":            "科技",
+        "Basic Materials":       "原物料",
+        "Consumer Cyclical":     "非必需消費",
+        "Consumer Defensive":    "必需消費",
+        "Energy":                "能源",
+        "Financial Services":    "金融",
+        "Healthcare":            "醫療保健",
+        "Industrials":           "工業",
+        "Real Estate":           "房地產",
+        "Communication Services":"通訊服務",
+        "Utilities":             "公用事業",
+    }
+    _INDUSTRY_ZH = {
+        "Semiconductors":                  "半導體",
+        "Semiconductor Equipment & Materials": "半導體設備與材料",
+        "Electronic Components":           "電子零組件",
+        "Consumer Electronics":            "消費電子",
+        "Computer Hardware":               "電腦硬體",
+        "Software—Application":            "應用軟體",
+        "Software—Infrastructure":         "基礎設施軟體",
+        "Information Technology Services": "資訊服務",
+        "Electronic Gaming & Multimedia":  "電子遊戲",
+        "Solar":                           "太陽能",
+        "Specialty Chemicals":             "特用化學品",
+        "Electrical Equipment & Parts":    "電氣設備",
+        "Auto Parts":                      "汽車零件",
+        "Industrial Conglomerates":        "工業集團",
+        "Banks—Regional":                  "區域銀行",
+        "Insurance—Life":                  "壽險",
+        "Asset Management":                "資產管理",
+        "Biotechnology":                   "生技",
+        "Drug Manufacturers—General":      "製藥",
+        "Telecom Services":                "電信服務",
+        "Internet Content & Information":  "網路服務",
+        "Communication Equipment":         "通訊設備",
+        "Steel":                           "鋼鐵",
+        "Chemicals":                       "化工",
+        "Textile Manufacturing":           "紡織",
+        "Packaging & Containers":          "包裝容器",
+        "Residential Construction":        "建設",
+        "Retail—Defensive":                "防禦型零售",
+        "Retail—Cyclical":                 "景氣型零售",
+        "Restaurants":                     "餐飲",
+        "Airlines":                        "航空",
+        "Marine Shipping":                 "海運",
+        "Trucking":                        "陸運",
+    }
+
+    def _industry_heat(rs: float | None, t_score: int) -> dict:
+        """根據 RS 相對強度 + 趨勢分數評估產業熱度"""
+        if rs is None:
+            rs = 0.0
+        if rs >= 20 and t_score >= 6:
+            level, label, color, note = "🔥", "強勢熱門", "#ef5350", "該股明顯強於大盤，產業動能旺盛，值得優先關注"
+        elif rs >= 8 and t_score >= 5:
+            level, label, color, note = "📈", "偏強", "#ff9800", "相對大盤表現偏強，產業趨勢向上，可列入追蹤"
+        elif rs >= 0 and t_score >= 4:
+            level, label, color, note = "➡️", "中性", "#787b86", "與大盤走勢相近，需等待更明確催化劑"
+        elif rs >= -10:
+            level, label, color, note = "📉", "偏弱", "#787b86", "近期表現落後大盤，產業動能不足，建議觀望"
+        else:
+            level, label, color, note = "❄️", "低迷", "#4a7a8a", "明顯弱於大盤，不建議逆勢佈局"
+        watch = (rs >= 8 and t_score >= 5)
+        return {"level": level, "label": label, "color": color, "note": note, "watch": watch}
+
+    def _yf_info_sync(sym: str) -> dict:
+        """抓 yfinance Ticker.info（sector / industry / longBusinessSummary）"""
+        try:
+            for suffix in [".TW", ".TWO", ""]:
+                try:
+                    t    = yf.Ticker(f"{sym}{suffix}", session=YF_SESSION)
+                    info = t.info or {}
+                    if info.get("sector") or info.get("industry"):
+                        return info
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return {}
+
     try:
         loop = asyncio.get_event_loop()
+
+        # ── 0. 同步抓 yfinance info（產業 / 公司簡介）─────────────
+        yf_info = await loop.run_in_executor(executor, _yf_info_sync, symbol)
+        sector_en   = yf_info.get("sector",   "") or ""
+        industry_en = yf_info.get("industry", "") or ""
+        sector_zh   = _SECTOR_ZH.get(sector_en,   sector_en)
+        industry_zh = _INDUSTRY_ZH.get(industry_en, industry_en)
 
         # ── 1. 取資料：Yahoo Chart → FinMind → TWSE ───────────────
         raw: list = await loop.run_in_executor(executor, _yahoo_chart_sync, symbol, "1y", "1d")
@@ -2430,6 +2520,10 @@ async def analyze_stock(symbol: str):
             "recommendation": rec,
             "rec_color":      rec_color,
             "rec_detail":     rec_detail,
+            # 產業
+            "sector":         sector_zh or None,
+            "industry":       industry_zh or None,
+            "industry_heat":  _industry_heat(rs_score, trend_score),
         }
     except Exception as e:
         import traceback
