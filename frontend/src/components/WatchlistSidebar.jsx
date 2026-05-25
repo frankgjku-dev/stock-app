@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { API_BASE } from '../config'
 
 export default function WatchlistSidebar({
   watchlist, currentSymbol,
@@ -10,6 +11,20 @@ export default function WatchlistSidebar({
   const [newName,      setNewName]      = useState('')
   const [editingId,    setEditingId]    = useState(null)
   const [editName,     setEditName]     = useState('')
+  const [nameMap,      setNameMap]      = useState({})  // { symbol: name }
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stocks/list`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const map = {}
+          data.forEach(item => { map[item.symbol] = item.name })
+          setNameMap(map)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   function submitAddGroup() {
     const n = newName.trim()
@@ -113,7 +128,15 @@ export default function WatchlistSidebar({
                     className={`wl-row ${sym === currentSymbol ? 'current' : ''}`}
                     onClick={() => onSelectSymbol(sym)}
                   >
-                    <span className="wl-sym">{sym}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                      <span className="wl-sym">{sym}</span>
+                      {nameMap[sym] && (
+                        <span style={{
+                          fontSize: 11, color: 'var(--text-3)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>{nameMap[sym]}</span>
+                      )}
+                    </div>
                     <button
                       className="wl-rm"
                       onClick={e => { e.stopPropagation(); onToggleInGroup(sym, group.id) }}
