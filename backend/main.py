@@ -2515,6 +2515,7 @@ async def analyze_stock(symbol: str):
             "hl5ma_pb_low":      hl5ma["pb_low"],
             "hl5ma_ma5":         hl5ma["ma5"],
             "hl5ma_hl_count":    hl5ma["hl_count"],
+            "hl5ma_ma5_slope_3d": hl5ma["ma5_slope_3d"],
             # 量能
             "vol_ratio":  vol_ratio,
             "avg_vol20":  int(avg_vol20),
