@@ -2278,7 +2278,7 @@ def _industry_heat(rs, t_score):
         level, label, color, note = "📉", "偏弱", "#787b86", "近期表現落後大盤，產業動能不足，建議觀望"
     else:
         level, label, color, note = "❄️", "低迷", "#4a7a8a", "明顯弱於大盤，不建議逆勢佈局"
-    watch = (rs >= 8 and t_score >= 5)
+    watch = bool(rs >= 8 and t_score >= 5)
     return {"level": level, "label": label, "color": color, "note": note, "watch": watch}
 
 
@@ -2433,10 +2433,10 @@ async def analyze_stock(symbol: str):
                 def _ret(arr, d):
                     d2 = min(d, len(arr)-1)
                     return (arr[-1]/arr[-d2]-1)*100 if d2 > 0 else 0
-                rs_score = round(
+                rs_score = float(round(
                     0.4*(_ret(closes_arr,63) -_ret(bc_arr,63))  +
                     0.3*(_ret(closes_arr,126)-_ret(bc_arr,126)) +
-                    0.3*(_ret(closes_arr,252)-_ret(bc_arr,252)), 1)
+                    0.3*(_ret(closes_arr,252)-_ret(bc_arr,252)), 1))
         except Exception:
             pass
 
