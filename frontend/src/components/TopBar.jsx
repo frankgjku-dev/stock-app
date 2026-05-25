@@ -97,7 +97,10 @@ export default function TopBar({
       {/* Quote */}
       {quote && (
         <div className="quote-block" style={{ position:'relative' }}>
-          <span className="quote-name">{quote.name || symbol}</span>
+          <span className="quote-name">
+            <span style={{ fontSize: 12, color: 'var(--text-3)', marginRight: 5 }}>{symbol}</span>
+            {quote.name || ''}
+          </span>
           <span className={`quote-price ${cls}`}>{quote.price?.toFixed(2) ?? '--'}</span>
           <span className={`quote-change ${cls}`}>
             {change >= 0 ? '+' : ''}{change.toFixed(2)}
