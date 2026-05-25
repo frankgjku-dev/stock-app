@@ -29,6 +29,7 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState(null)
+  const [industry,   setIndustry]   = useState(null)  // { sector, industry }
 
   // ── Autocomplete state ──
   const [stockList,  setStockList]  = useState({})   // { symbol: name }
@@ -91,13 +92,21 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
   async function analyze(overrideSym) {
     const s = (overrideSym || sym).trim()
     if (!s) return
-    setLoading(true); setError(null); setData(null)
+    setLoading(true); setError(null); setData(null); setIndustry(null)
     setShowDrop(false)
     try {
-      const res  = await fetch(`${API_BASE}/api/stocks/${s}/analyze`)
+      const res = await fetch(`${API_BASE}/api/stocks/${s}/analyze`)
+      const ct  = res.headers.get('content-type') || ''
+      if (!ct.includes('application/json')) throw new Error('non-json')
       const json = await res.json()
       if (json.error) { setError(json.error); return }
       setData(json)
+
+      // 產業資訊另外非同步抓，失敗不影響主分析顯示
+      fetch(`${API_BASE}/api/stocks/${s}/industry`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d && (d.sector || d.industry)) setIndustry(d) })
+        .catch(() => {})
     } catch (e) {
       setError('無法取得分析資料，請稍後再試')
     } finally {
@@ -193,7 +202,7 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
           </div>
 
           {/* 產業分析 */}
-          {(data.sector || data.industry) && data.industry_heat && (
+          {(industry?.sector || industry?.industry) && data.industry_heat && (
             <div style={{
               background: 'var(--surface-2)', border: '1px solid var(--border)',
               borderRadius: 10, padding: '14px 18px', marginBottom: 12,
@@ -202,16 +211,16 @@ export default function StockAnalysis({ currentSymbol, onSelectStock }) {
                 🏭 產業分析
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', marginBottom: 10 }}>
-                {data.sector && (
+                {industry?.sector && (
                   <div>
                     <span style={{ fontSize: 11, color: 'var(--text-3)' }}>所屬板塊　</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{data.sector}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{industry.sector}</span>
                   </div>
                 )}
-                {data.industry && (
+                {industry?.industry && (
                   <div>
                     <span style={{ fontSize: 11, color: 'var(--text-3)' }}>細分產業　</span>
-                    <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{data.industry}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>{industry.industry}</span>
                   </div>
                 )}
                 <div>
