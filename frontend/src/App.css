@@ -244,6 +244,29 @@ body {
   pointer-events: none;
 }
 
+/* ── Chart OHLC Legend ───────────────────────────────── */
+.chart-ohlc-legend {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 10px;
+  background: rgba(250,245,236,0.88);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.chart-ohlc-legend .lg-date { color: var(--text-3); margin-right: 4px; }
+.chart-ohlc-legend .lg-item { display: flex; align-items: center; gap: 3px; }
+.chart-ohlc-legend .lg-item b { font-weight: 600; }
+
 /* ── Indicator Bar ───────────────────────────────────── */
 .indicator-bar {
   display: flex; align-items: center; gap: 6px;

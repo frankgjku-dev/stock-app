@@ -329,12 +329,59 @@ export default function Chart({
       })
     })
 
+    // ── OHLC 資訊列（頂部懸浮 legend）──────────────
+    const legend = document.createElement('div')
+    legend.className = 'chart-ohlc-legend'
+    ct.appendChild(legend)
+
+    function fmtVol(v) {
+      if (v == null || isNaN(v)) return '--'
+      if (v >= 1e8) return (v / 1e8).toFixed(1) + '億'
+      if (v >= 1e4) return (v / 1e4).toFixed(0) + '萬'
+      return String(v)
+    }
+    function fmtTime(t) {
+      if (t == null) return ''
+      if (typeof t === 'object' && 'year' in t) {
+        const m = String(t.month).padStart(2, '0')
+        const d = String(t.day).padStart(2, '0')
+        return `${t.year}　${m}/${d}`
+      }
+      const dt = new Date(t * 1000)
+      const mo = String(dt.getMonth() + 1).padStart(2, '0')
+      const dy = String(dt.getDate()).padStart(2, '0')
+      const h  = String(dt.getHours()).padStart(2, '0')
+      const mi = String(dt.getMinutes()).padStart(2, '0')
+      return `${dt.getFullYear()}　${mo}/${dy}　${h}:${mi}`
+    }
+
     // 圖表滾動/縮放 → 重繪覆蓋層
     chart.timeScale().subscribeVisibleLogicalRangeChange(redraw)
 
     // crosshair 移動
     chart.subscribeCrosshairMove(param => {
       S.current.hoverPt = param.point || null
+
+      // ── 更新 OHLC legend ──
+      if (!param.time || !param.point) {
+        legend.style.opacity = '0'
+      } else {
+        const ohlc = param.seriesData?.get(cs)
+        const volD = param.seriesData?.get(vs)
+        if (ohlc && ohlc.open != null && !isNaN(ohlc.open)) {
+          const up = ohlc.close >= ohlc.open
+          legend.innerHTML =
+            `<span class="lg-date">${fmtTime(param.time)}</span>` +
+            `<span class="lg-item">開<b>${ohlc.open.toFixed(2)}</b></span>` +
+            `<span class="lg-item">高<b style="color:#c85a50">${ohlc.high.toFixed(2)}</b></span>` +
+            `<span class="lg-item">低<b style="color:#4a9468">${ohlc.low.toFixed(2)}</b></span>` +
+            `<span class="lg-item">收<b style="color:${up ? '#c85a50' : '#4a9468'}">${ohlc.close.toFixed(2)}</b></span>` +
+            `<span class="lg-item">量<b>${fmtVol(volD?.value)}</b></span>`
+          legend.style.opacity = '1'
+        } else {
+          legend.style.opacity = '0'
+        }
+      }
 
       // ── Ctrl 吸附：找最近 K 棒的最高/最低點 ──
       let snapPt = null
@@ -440,6 +487,7 @@ export default function Chart({
       window.removeEventListener('scroll', onScroll, true)
       chart.remove()
       document.body.removeChild(canvas)
+      if (ct.contains(legend)) ct.removeChild(legend)
       S.current.chart = null
       S.current.series = {}
       S.current.redraw = null
