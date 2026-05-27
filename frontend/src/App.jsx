@@ -456,7 +456,7 @@ export default function App() {
       {tab === 'analysis' && (
         <StockAnalysis
           currentSymbol={symbol}
-          onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
+          onSelectStock={(s) => { setSymbol(s); setInterval('1d'); setPeriod('1y'); setTab('chart') }}
         />
       )}
 

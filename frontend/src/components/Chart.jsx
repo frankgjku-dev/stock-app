@@ -286,7 +286,28 @@ export default function Chart({
         horzLine: { color:'#b86e2a66', labelBackgroundColor:'#b86e2a' },
       },
       rightPriceScale: { borderColor:'rgba(140,100,60,0.18)' },
-      timeScale: { borderColor:'rgba(140,100,60,0.18)', timeVisible:true },
+      timeScale: {
+        borderColor: 'rgba(140,100,60,0.18)',
+        timeVisible: true,
+        // 左邊顯示年份，右邊顯示月/日
+        tickMarkFormatter: (time, tickMarkType) => {
+          if (time !== null && typeof time === 'object' && 'year' in time) {
+            // 日線/週線/月線：time 為 BusinessDay { year, month, day }
+            const m = String(time.month).padStart(2, '0')
+            const d = String(time.day).padStart(2, '0')
+            return tickMarkType === 0 ? `${time.year}` : `${m}/${d}`
+          }
+          // 分鐘線：time 為 unix timestamp（秒）
+          const dt = new Date(time * 1000)
+          const mo = String(dt.getMonth() + 1).padStart(2, '0')
+          const dy = String(dt.getDate()).padStart(2, '0')
+          const h  = String(dt.getHours()).padStart(2, '0')
+          const mi = String(dt.getMinutes()).padStart(2, '0')
+          if (tickMarkType === 0) return `${dt.getFullYear()}`
+          if (tickMarkType <= 2)  return `${mo}/${dy}`
+          return `${h}:${mi}`
+        },
+      },
     })
     S.current.chart = chart
 
