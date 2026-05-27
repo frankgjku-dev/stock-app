@@ -256,7 +256,12 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 pb_pct = ((swing_high - pb_low) / swing_high * 100
                           if swing_high > 0 else 0.0)
                 # 判斷 Higher Low：當前低點 > 前次低點
-                is_hl = prev_pb_low > 0 and pb_low > prev_pb_low
+                # 額外條件：回檔深度 >= 7%，淺彈（< 7%）不算有效 HL
+                # 理由：進場也要求回檔 7-25%，HL 計數應使用相同門檻，
+                #       避免計入一日穿越 5MA 的雜訊假訊號
+                is_hl = (prev_pb_low > 0
+                         and pb_low > prev_pb_low
+                         and pb_pct >= 7.0)
                 if is_hl:
                     hl_count += 1
                 # 更新前次低點
