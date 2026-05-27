@@ -113,6 +113,18 @@ export default function Chart({
       const [ty,by] = [Math.min(p1.y,p2.y), Math.max(p1.y,p2.y)]
       return mx>=lx && mx<=rx && my>=ty && my<=by
     }
+    if (type === 'arc') {
+      // Sample the quadratic bezier and check proximity
+      const cpXa = (p1.x + p2.x) / 2
+      const cpYa = (p1.y + p2.y) / 2 - Math.abs(p2.x - p1.x) * 0.45
+      for (let ti = 0; ti <= 10; ti++) {
+        const ta = ti / 10
+        const bx = (1-ta)*(1-ta)*p1.x + 2*(1-ta)*ta*cpXa + ta*ta*p2.x
+        const by = (1-ta)*(1-ta)*p1.y + 2*(1-ta)*ta*cpYa + ta*ta*p2.y
+        if (Math.hypot(mx - bx, my - by) < T) return true
+      }
+      return false
+    }
     const dx=p2.x-p1.x, dy=p2.y-p1.y, len2=dx*dx+dy*dy
     if (!len2) return Math.hypot(mx-p1.x, my-p1.y) < T
     const t = Math.max(0, Math.min(1, ((mx-p1.x)*dx+(my-p1.y)*dy)/len2))
@@ -235,6 +247,57 @@ export default function Chart({
             if (span != null)
               ctx.fillText((pts[0].price + span * r).toFixed(2), minX - 54, y + 4)
           })
+          break
+        }
+        case 'arc': {
+          if (!p2) break
+          // Quadratic bezier: control point at mid-x, arching upward
+          const arcCpX = (p1.x + p2.x) / 2
+          const arcCpY = (p1.y + p2.y) / 2 - Math.abs(p2.x - p1.x) * 0.45
+          ctx.beginPath()
+          ctx.moveTo(p1.x, p1.y)
+          ctx.quadraticCurveTo(arcCpX, arcCpY, p2.x, p2.y)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Endpoint anchor dots
+          const arcAnchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
+          arcAnchors.forEach(pt => {
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI * 2)
+            ctx.fillStyle = strokeColor; ctx.fill()
+            ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
+          })
+
+          // % return label at bezier midpoint (t=0.5)
+          const arcEndPrice = pts[1]
+            ? pts[1].price
+            : (isPreview
+                ? (S.current.series?.candle?.coordinateToPrice(p2.y) ?? null)
+                : null)
+          if (arcEndPrice != null) {
+            const pct = (arcEndPrice - pts[0].price) / pts[0].price * 100
+            const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+            // Bezier midpoint at t=0.5: B(0.5) = 0.25*P1 + 0.5*CP + 0.25*P2
+            const lbx = 0.25*p1.x + 0.5*arcCpX + 0.25*p2.x
+            const lby = 0.25*p1.y + 0.5*arcCpY + 0.25*p2.y
+            ctx.save()
+            ctx.setLineDash([])
+            ctx.font = 'bold 11px Inter, system-ui, sans-serif'
+            const lbw = ctx.measureText(pctLabel).width + 14
+            const lbh = 18
+            const lbrx = lbx - lbw / 2
+            const lbry = lby - lbh / 2
+            ctx.fillStyle = pct >= 0 ? 'rgba(74,148,96,0.92)' : 'rgba(200,90,80,0.92)'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(lbrx, lbry, lbw, lbh, 4)
+            else ctx.rect(lbrx, lbry, lbw, lbh)
+            ctx.fill()
+            ctx.fillStyle = '#fff'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(pctLabel, lbx, lbry + lbh / 2)
+            ctx.restore()
+          }
           break
         }
       }

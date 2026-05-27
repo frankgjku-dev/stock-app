@@ -10,6 +10,7 @@ const TOOLS = [
   { id: 'vertical',   icon: '|',  label: '垂直線：點一下即完成' },
   { id: 'rectangle',  icon: '▭',  label: '矩形區間：點兩下定對角' },
   { id: 'fibonacci',  icon: '≋',  label: '斐波那契回調：點兩下定高低點' },
+  { id: 'arc',        icon: '⌒',  label: '弧形量幅：點兩下定起終點，顯示漲跌%' },
 ]
 
 const PRESET_COLORS = [
