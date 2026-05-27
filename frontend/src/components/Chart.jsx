@@ -114,13 +114,15 @@ export default function Chart({
       return mx>=lx && mx<=rx && my>=ty && my<=by
     }
     if (type === 'arc') {
-      // Sample the quadratic bezier and check proximity
-      const cpXa = (p1.x + p2.x) / 2
-      const cpYa = (p1.y + p2.y) / 2 - Math.abs(p2.x - p1.x) * 0.45
-      for (let ti = 0; ti <= 10; ti++) {
-        const ta = ti / 10
-        const bx = (1-ta)*(1-ta)*p1.x + 2*(1-ta)*ta*cpXa + ta*ta*p2.x
-        const by = (1-ta)*(1-ta)*p1.y + 2*(1-ta)*ta*cpYa + ta*ta*p2.y
+      // Cubic bezier U-shape: sample along the curve for hit detection
+      const arcHt   = Math.abs(p2.x - p1.x)
+      const arcDept = arcHt * 0.75
+      const cp1xt = p1.x, cp1yt = p1.y + arcDept
+      const cp2xt = p2.x, cp2yt = p2.y + arcDept
+      for (let ti = 0; ti <= 12; ti++) {
+        const ta = ti / 12, oa = 1 - ta
+        const bx = oa*oa*oa*p1.x + 3*oa*oa*ta*cp1xt + 3*oa*ta*ta*cp2xt + ta*ta*ta*p2.x
+        const by = oa*oa*oa*p1.y + 3*oa*oa*ta*cp1yt + 3*oa*ta*ta*cp2yt + ta*ta*ta*p2.y
         if (Math.hypot(mx - bx, my - by) < T) return true
       }
       return false
@@ -251,16 +253,34 @@ export default function Chart({
         }
         case 'arc': {
           if (!p2) break
-          // Quadratic bezier: control point at mid-x, arching upward
-          const arcCpX = (p1.x + p2.x) / 2
-          const arcCpY = (p1.y + p2.y) / 2 - Math.abs(p2.x - p1.x) * 0.45
+          // Cubic bezier U-shape (Cup pattern):
+          // control points directly below each endpoint → creates a round bowl/cup curve
+          const arcH    = Math.abs(p2.x - p1.x)
+          const arcDepth = arcH * 0.75
+          const arcCp1x = p1.x,  arcCp1y = p1.y + arcDepth
+          const arcCp2x = p2.x,  arcCp2y = p2.y + arcDepth
+
+          // 1. Semi-transparent fill (cup interior, between chord and arc)
+          ctx.save()
+          ctx.setLineDash([])
+          ctx.fillStyle = color + (isPreview ? '1a' : '2e')
           ctx.beginPath()
           ctx.moveTo(p1.x, p1.y)
-          ctx.quadraticCurveTo(arcCpX, arcCpY, p2.x, p2.y)
+          ctx.bezierCurveTo(arcCp1x, arcCp1y, arcCp2x, arcCp2y, p2.x, p2.y)
+          ctx.closePath()   // straight chord back to p1
+          ctx.fill()
+          ctx.restore()
+
+          // 2. Arc outline (dashed when preview)
+          ctx.strokeStyle = strokeColor
+          ctx.lineWidth   = selected ? 2.5 : 1.5
+          ctx.beginPath()
+          ctx.moveTo(p1.x, p1.y)
+          ctx.bezierCurveTo(arcCp1x, arcCp1y, arcCp2x, arcCp2y, p2.x, p2.y)
           ctx.stroke()
           ctx.setLineDash([])
 
-          // Endpoint anchor dots
+          // 3. Endpoint anchor dots
           const arcAnchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
           arcAnchors.forEach(pt => {
             ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI * 2)
@@ -268,25 +288,23 @@ export default function Chart({
             ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
           })
 
-          // % return label at bezier midpoint (t=0.5)
+          // 4. % return label at arc bottom (cubic bezier t=0.5)
+          // B(0.5).x = 0.5*(p1.x+p2.x),  B(0.5).y = 0.5*(p1.y+p2.y) + 0.75*arcDepth
           const arcEndPrice = pts[1]
             ? pts[1].price
-            : (isPreview
-                ? (S.current.series?.candle?.coordinateToPrice(p2.y) ?? null)
-                : null)
+            : (isPreview ? (S.current.series?.candle?.coordinateToPrice(p2.y) ?? null) : null)
           if (arcEndPrice != null) {
             const pct = (arcEndPrice - pts[0].price) / pts[0].price * 100
             const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
-            // Bezier midpoint at t=0.5: B(0.5) = 0.25*P1 + 0.5*CP + 0.25*P2
-            const lbx = 0.25*p1.x + 0.5*arcCpX + 0.25*p2.x
-            const lby = 0.25*p1.y + 0.5*arcCpY + 0.25*p2.y
+            const lbx  = 0.5 * (p1.x + p2.x)
+            const lby  = 0.5 * (p1.y + p2.y) + 0.75 * arcDepth   // arc nadir
             ctx.save()
             ctx.setLineDash([])
             ctx.font = 'bold 11px Inter, system-ui, sans-serif'
             const lbw = ctx.measureText(pctLabel).width + 14
             const lbh = 18
             const lbrx = lbx - lbw / 2
-            const lbry = lby - lbh / 2
+            const lbry = lby - lbh - 6    // place label just above arc bottom, inside cup
             ctx.fillStyle = pct >= 0 ? 'rgba(74,148,96,0.92)' : 'rgba(200,90,80,0.92)'
             ctx.beginPath()
             if (ctx.roundRect) ctx.roundRect(lbrx, lbry, lbw, lbh, 4)
