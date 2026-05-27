@@ -337,7 +337,7 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
 
     last_date = str(dates[n - 1])[:10]
     return {
-        "valid":        True,
+        "valid":        hl_count >= 1,
         "entry":        entry and entry_date == last_date,
         "entry_price":  entry_price,
         "in_pullback":  state == "below",
@@ -2541,7 +2541,7 @@ async def analyze_stock(symbol: str):
             "pivot_price":    pivot_price,
             "dist_to_pivot":  round(dist_to_pivot, 1) if dist_to_pivot is not None else None,
             "base_high":      vcp.get("base_high"),
-            # HL5MA 獨立策略
+            # HL5MA 獨立策略（flat keys 供排序/篩選；nested dict 供前端 r.hl5ma?.valid）
             "hl5ma_valid":       hl5ma["valid"],
             "hl5ma_entry":       hl5ma["entry"],
             "hl5ma_entry_price": hl5ma["entry_price"],
@@ -2552,6 +2552,18 @@ async def analyze_stock(symbol: str):
             "hl5ma_ma5":         hl5ma["ma5"],
             "hl5ma_hl_count":    hl5ma["hl_count"],
             "hl5ma_ma5_slope_3d": hl5ma["ma5_slope_3d"],
+            "hl5ma": {
+                "valid":        hl5ma["valid"],
+                "entry":        hl5ma["entry"],
+                "entry_price":  hl5ma["entry_price"],
+                "in_pullback":  hl5ma["in_pullback"],
+                "pullback_pct": hl5ma["pullback_pct"],
+                "swing_high":   hl5ma["swing_high"],
+                "pb_low":       hl5ma["pb_low"],
+                "ma5":          hl5ma["ma5"],
+                "hl_count":     hl5ma["hl_count"],
+                "ma5_slope_3d": hl5ma["ma5_slope_3d"],
+            },
             # 量能
             "vol_ratio":  vol_ratio,
             "avg_vol20":  int(avg_vol20),
