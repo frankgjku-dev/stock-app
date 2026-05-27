@@ -289,23 +289,23 @@ export default function Chart({
       timeScale: {
         borderColor: 'rgba(140,100,60,0.18)',
         timeVisible: true,
-        // 左邊顯示年份，右邊顯示月/日
-        tickMarkFormatter: (time, tickMarkType) => {
+      },
+      localization: {
+        // 游標懸浮標籤：左年份　右月/日（日線）或 年份 月/日 時:分（分線）
+        timeFormatter: (time) => {
           if (time !== null && typeof time === 'object' && 'year' in time) {
-            // 日線/週線/月線：time 為 BusinessDay { year, month, day }
+            // 日線/週線/月線：BusinessDay { year, month, day }
             const m = String(time.month).padStart(2, '0')
             const d = String(time.day).padStart(2, '0')
-            return tickMarkType === 0 ? `${time.year}` : `${m}/${d}`
+            return `${time.year}　${m}/${d}`
           }
-          // 分鐘線：time 為 unix timestamp（秒）
+          // 分鐘線：unix timestamp（秒）
           const dt = new Date(time * 1000)
           const mo = String(dt.getMonth() + 1).padStart(2, '0')
           const dy = String(dt.getDate()).padStart(2, '0')
           const h  = String(dt.getHours()).padStart(2, '0')
           const mi = String(dt.getMinutes()).padStart(2, '0')
-          if (tickMarkType === 0) return `${dt.getFullYear()}`
-          if (tickMarkType <= 2)  return `${mo}/${dy}`
-          return `${h}:${mi}`
+          return `${dt.getFullYear()}　${mo}/${dy}　${h}:${mi}`
         },
       },
     })
