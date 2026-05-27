@@ -1752,3 +1752,70 @@ body {
   .ar-grid { grid-template-columns: 1fr; }
 }
 .rs-hint { color: var(--text-3); font-size: 13px; padding: 24px 0; }
+
+/* ═══════════════════════════════════════════════════════
+   備註面板 (StockNotes)
+═══════════════════════════════════════════════════════ */
+.stock-notes {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.stock-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--trans);
+}
+.stock-notes-header:hover { background: var(--surface-2); }
+
+.stock-notes-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.notes-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.notes-ts {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.notes-toggle {
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.stock-notes-textarea {
+  display: block;
+  width: 100%;
+  min-height: 90px;
+  max-height: 200px;
+  padding: 8px 14px;
+  background: var(--surface-2);
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--text-1);
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: background var(--trans);
+}
+.stock-notes-textarea:focus { background: var(--surface); }
+.stock-notes-textarea::placeholder { color: var(--text-3); }

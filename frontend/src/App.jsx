@@ -7,6 +7,7 @@ import WatchlistSidebar from './components/WatchlistSidebar'
 import AuthModal        from './components/AuthModal'
 import AlertsModal      from './components/AlertsModal'
 import Institutional    from './components/Institutional'
+import StockNotes      from './components/StockNotes'
 import Screener         from './pages/Screener'
 import Calculator       from './pages/Calculator'
 import Journal          from './pages/Journal'
@@ -64,6 +65,7 @@ export default function App() {
   const [journal,   setJournal]   = useState(() => ls('tw_journal',   []))
   const [drawings,  setDrawings]  = useState(() => ls('tw_drawings',  {}))
   const [alerts,    setAlerts]    = useState(() => ls('tw_alerts',    []))
+  const [notes,     setNotes]     = useState(() => ls('tw_notes',     {}))
   const [showAlerts, setShowAlerts] = useState(false)
 
   const chartClearRef = useRef(null)
@@ -148,6 +150,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('tw_journal',   JSON.stringify(journal));   if (user) scheduleSync() }, [journal])
   useEffect(() => { localStorage.setItem('tw_drawings',  JSON.stringify(drawings));  if (user) scheduleSync() }, [drawings])
   useEffect(() => { localStorage.setItem('tw_alerts',    JSON.stringify(alerts));    if (user) scheduleSync() }, [alerts])
+  useEffect(() => { localStorage.setItem('tw_notes',     JSON.stringify(notes)) },   [notes])
 
   /* ── 警示輪詢（每 60 秒）── */
   useEffect(() => {
@@ -307,6 +310,24 @@ export default function App() {
     setDrawings(prev => ({ ...prev, [drawingsKey]: arr }))
   }, [drawingsKey])
 
+  /* ── notes 操作 ── */
+  const handleNoteChange = useCallback((sym, text) => {
+    setNotes(prev => {
+      const next = { ...prev }
+      if (text.trim()) {
+        next[sym] = text
+        next[`__ts_${sym}`] = new Date().toLocaleString('zh-TW', {
+          month: '2-digit', day: '2-digit',
+          hour: '2-digit',  minute: '2-digit',
+        })
+      } else {
+        delete next[sym]
+        delete next[`__ts_${sym}`]
+      }
+      return next
+    })
+  }, [])
+
   /* ════════════════════════════════════════════════ */
   return (
     <div className="app">
@@ -411,6 +432,7 @@ export default function App() {
               />
             </div>
             <Institutional symbol={symbol} />
+            <StockNotes symbol={symbol} notes={notes} onChange={handleNoteChange} />
           </div>
           <WatchlistSidebar
             watchlist={watchlist} currentSymbol={symbol}
