@@ -114,11 +114,14 @@ export default function Chart({
       return mx>=lx && mx<=rx && my>=ty && my<=by
     }
     if (type === 'arc') {
-      // Cubic bezier U-shape: sample along the curve for hit detection
+      // Cubic bezier U-shape: sample along curve + check draggable nadir handle
       const arcHt   = Math.abs(p2.x - p1.x)
-      const arcDept = arcHt * 0.75
+      const arcDept = arcHt * (d.arcDepthFactor ?? 0.75)
       const cp1xt = p1.x, cp1yt = p1.y + arcDept
       const cp2xt = p2.x, cp2yt = p2.y + arcDept
+      // nadir handle at bezier t=0.5
+      const nadNx = 0.5*(p1.x+p2.x), nadNy = 0.5*(p1.y+p2.y) + 0.75*arcDept
+      if (Math.hypot(mx - nadNx, my - nadNy) < 12) return true
       for (let ti = 0; ti <= 12; ti++) {
         const ta = ti / 12, oa = 1 - ta
         const bx = oa*oa*oa*p1.x + 3*oa*oa*ta*cp1xt + 3*oa*ta*ta*cp2xt + ta*ta*ta*p2.x
@@ -253,25 +256,27 @@ export default function Chart({
         }
         case 'arc': {
           if (!p2) break
-          // Cubic bezier U-shape (Cup pattern):
-          // control points directly below each endpoint → creates a round bowl/cup curve
-          const arcH    = Math.abs(p2.x - p1.x)
-          const arcDepth = arcH * 0.75
-          const arcCp1x = p1.x,  arcCp1y = p1.y + arcDepth
-          const arcCp2x = p2.x,  arcCp2y = p2.y + arcDepth
+          // Cubic bezier U/dome shape — arcDepthFactor controls curvature (draggable)
+          const arcH     = Math.abs(p2.x - p1.x)
+          const arcDepth = arcH * (d.arcDepthFactor ?? 0.75)
+          const arcCp1x  = p1.x,  arcCp1y = p1.y + arcDepth
+          const arcCp2x  = p2.x,  arcCp2y = p2.y + arcDepth
+          // nadir/apex: cubic bezier midpoint (t=0.5)
+          const nadX = 0.5 * (p1.x + p2.x)
+          const nadY = 0.5 * (p1.y + p2.y) + 0.75 * arcDepth
 
-          // 1. Semi-transparent fill (cup interior, between chord and arc)
+          // 1. Semi-transparent fill (interior between chord and arc)
           ctx.save()
           ctx.setLineDash([])
           ctx.fillStyle = color + (isPreview ? '1a' : '2e')
           ctx.beginPath()
           ctx.moveTo(p1.x, p1.y)
           ctx.bezierCurveTo(arcCp1x, arcCp1y, arcCp2x, arcCp2y, p2.x, p2.y)
-          ctx.closePath()   // straight chord back to p1
+          ctx.closePath()
           ctx.fill()
           ctx.restore()
 
-          // 2. Arc outline (dashed when preview)
+          // 2. Arc outline (dashed in preview)
           ctx.strokeStyle = strokeColor
           ctx.lineWidth   = selected ? 2.5 : 1.5
           ctx.beginPath()
@@ -288,23 +293,38 @@ export default function Chart({
             ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
           })
 
-          // 4. % return label at arc bottom (cubic bezier t=0.5)
-          // B(0.5).x = 0.5*(p1.x+p2.x),  B(0.5).y = 0.5*(p1.y+p2.y) + 0.75*arcDepth
+          // 4. Nadir/apex handle — draggable, visible when arc is selected
+          if (selected && pts[1]) {
+            ctx.save()
+            ctx.setLineDash([])
+            ctx.fillStyle   = 'rgba(250,245,236,0.95)'
+            ctx.strokeStyle = strokeColor
+            ctx.lineWidth   = 2
+            ctx.beginPath(); ctx.arc(nadX, nadY, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+            // ↕ arrows hint
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(nadX, nadY - 11); ctx.lineTo(nadX, nadY - 7)
+            ctx.moveTo(nadX, nadY + 7);  ctx.lineTo(nadX, nadY + 11)
+            ctx.stroke()
+            ctx.restore()
+          }
+
+          // 5. % return label at nadir
           const arcEndPrice = pts[1]
             ? pts[1].price
             : (isPreview ? (S.current.series?.candle?.coordinateToPrice(p2.y) ?? null) : null)
           if (arcEndPrice != null) {
             const pct = (arcEndPrice - pts[0].price) / pts[0].price * 100
             const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
-            const lbx  = 0.5 * (p1.x + p2.x)
-            const lby  = 0.5 * (p1.y + p2.y) + 0.75 * arcDepth   // arc nadir
             ctx.save()
             ctx.setLineDash([])
             ctx.font = 'bold 11px Inter, system-ui, sans-serif'
             const lbw = ctx.measureText(pctLabel).width + 14
             const lbh = 18
-            const lbrx = lbx - lbw / 2
-            const lbry = lby - lbh - 6    // place label just above arc bottom, inside cup
+            const lbrx = nadX - lbw / 2
+            // Cup (arcDepth≥0): label above nadir; Dome (arcDepth<0): below apex
+            const lbry = arcDepth >= 0 ? nadY - lbh - 6 : nadY + 6
             ctx.fillStyle = pct >= 0 ? 'rgba(74,148,96,0.92)' : 'rgba(200,90,80,0.92)'
             ctx.beginPath()
             if (ctx.roundRect) ctx.roundRect(lbrx, lbry, lbw, lbh, 4)
@@ -313,7 +333,7 @@ export default function Chart({
             ctx.fillStyle = '#fff'
             ctx.textAlign = 'center'
             ctx.textBaseline = 'middle'
-            ctx.fillText(pctLabel, lbx, lbry + lbh / 2)
+            ctx.fillText(pctLabel, nadX, lbry + lbh / 2)
             ctx.restore()
           }
           break
@@ -573,6 +593,76 @@ export default function Chart({
     syncCanvas()
     redraw()
 
+    // ── Arc nadir drag (adjust curvature after placement) ────────────
+    let arcDrag = null
+
+    function getArcNadir(d) {
+      if (d.type !== 'arc' || !d.pts[1]) return null
+      const pp1 = toPixel(d.pts[0].price, d.pts[0].time)
+      const pp2 = toPixel(d.pts[1].price, d.pts[1].time)
+      if (!pp1 || !pp2) return null
+      const aw = Math.abs(pp2.x - pp1.x)
+      const ad = aw * (d.arcDepthFactor ?? 0.75)
+      return { x: 0.5*(pp1.x+pp2.x), y: 0.5*(pp1.y+pp2.y)+0.75*ad,
+               midY: 0.5*(pp1.y+pp2.y), w: aw }
+    }
+
+    function onArcMouseDown(e) {
+      if (activeToolRef.current !== 'cursor') return
+      const { selectedIdx, drawings } = S.current
+      if (selectedIdx < 0) return
+      const d = drawings[selectedIdx]
+      if (d?.type !== 'arc') return
+      const rect = ct.getBoundingClientRect()
+      const nad  = getArcNadir(d)
+      if (!nad) return
+      if (Math.hypot(e.clientX - rect.left - nad.x, e.clientY - rect.top - nad.y) > 12) return
+      arcDrag = { idx: selectedIdx, midY: nad.midY, w: nad.w }
+      // Prevent chart pan during drag
+      chart.applyOptions({ handleScroll: { pressedMouseMove: false, mouseWheel: true, horzTouchDrag: false } })
+      ct.style.cursor = 'ns-resize'
+      e.stopPropagation()
+    }
+
+    function onArcMouseMove(e) {
+      const rect = ct.getBoundingClientRect()
+      if (arcDrag) {
+        const my = e.clientY - rect.top
+        const { idx, midY, w } = arcDrag
+        const raw = w > 0 ? (my - midY) / (0.75 * w) : 0.75
+        S.current.drawings[idx] = {
+          ...S.current.drawings[idx],
+          arcDepthFactor: Math.max(-2.5, Math.min(3, raw)),
+        }
+        redraw()
+        return
+      }
+      // Show ns-resize cursor when hovering over nadir handle
+      if (activeToolRef.current === 'cursor') {
+        const { selectedIdx, drawings } = S.current
+        if (selectedIdx >= 0 && drawings[selectedIdx]?.type === 'arc') {
+          const nad = getArcNadir(drawings[selectedIdx])
+          if (nad && Math.hypot(e.clientX - rect.left - nad.x, e.clientY - rect.top - nad.y) <= 12) {
+            ct.style.cursor = 'ns-resize'
+            return
+          }
+        }
+        if (ct.style.cursor === 'ns-resize') ct.style.cursor = 'default'
+      }
+    }
+
+    function onArcMouseUp() {
+      if (!arcDrag) return
+      arcDrag = null
+      chart.applyOptions({ handleScroll: { pressedMouseMove: true, mouseWheel: true, horzTouchDrag: true } })
+      ct.style.cursor = 'default'
+      onDrawingsChangeRef.current?.(S.current.drawings)
+    }
+
+    ct.addEventListener('mousedown', onArcMouseDown, true)
+    ct.addEventListener('mousemove', onArcMouseMove, true)
+    ct.addEventListener('mouseup',   onArcMouseUp,   true)
+
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width:ct.clientWidth, height:ct.clientHeight })
       syncCanvas(); redraw()
@@ -586,6 +676,9 @@ export default function Chart({
     return () => {
       ro.disconnect()
       window.removeEventListener('scroll', onScroll, true)
+      ct.removeEventListener('mousedown', onArcMouseDown, true)
+      ct.removeEventListener('mousemove', onArcMouseMove, true)
+      ct.removeEventListener('mouseup',   onArcMouseUp,   true)
       chart.remove()
       document.body.removeChild(canvas)
       if (ct.contains(legend)) ct.removeChild(legend)
