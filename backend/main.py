@@ -218,6 +218,11 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
     prev_pb_low  = 0.0   # 上一次回檔的最低點（用於判斷 HL）
     hl_count     = 0     # 已確認的 Higher Low 數量
     pb_bars      = 0     # 本次回檔累積根數
+    # hl_floor：結構破位時記錄的波段最高點（取歷次 RESET 中最高的 swing_high）
+    # 股價必須先突破 hl_floor，才允許計入新的 HL 數量。
+    # 邏輯：底部被破（HL1→HL2→HL3 越來越低）代表下降趨勢，
+    #       需先突破破位當時的高點，證明結構修復，方可重新計入 HL。
+    hl_floor     = 0.0
 
     entry       = False
     entry_price = 0.0
@@ -244,7 +249,9 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
             if cur_l < pb_low:
                 pb_low = cur_l
             # 跌破前低 → 本次 HL 結構失效，重置計數
+            # 同時更新 hl_floor：記錄此次破位時的波段高（取歷次最大值）
             if prev_pb_low > 0 and pb_low < prev_pb_low:
+                hl_floor    = max(hl_floor, swing_high)
                 hl_count    = 0
                 prev_pb_low = 0.0
             if cur_c >= cur_ma5:
@@ -255,13 +262,19 @@ def detect_hl5ma(df: pd.DataFrame) -> dict:
                 # 計算回檔深度（swing_high → pb_low）
                 pb_pct = ((swing_high - pb_low) / swing_high * 100
                           if swing_high > 0 else 0.0)
-                # 判斷 Higher Low：當前低點 > 前次低點
-                # 額外條件：回檔深度 >= 7%，淺彈（< 7%）不算有效 HL
-                # 理由：進場也要求回檔 7-25%，HL 計數應使用相同門檻，
-                #       避免計入一日穿越 5MA 的雜訊假訊號
+                # 若本次波段高突破 hl_floor，代表結構已修復，清除地板
+                if hl_floor > 0 and swing_high > hl_floor:
+                    hl_floor = 0.0
+                # 判斷 Higher Low：三個條件同時滿足
+                #   1. 有前次低點可比較
+                #   2. 本次低點 > 前次低點（底部墊高）
+                #   3. 回檔深度 >= 7%（淺彈不算，與進場門檻一致）
+                #   4. hl_floor == 0（結構未破位，或已突破修復）
+                #      → 確保「底一直被破、沒突破前高」的股票不被計入 HL
                 is_hl = (prev_pb_low > 0
                          and pb_low > prev_pb_low
-                         and pb_pct >= 7.0)
+                         and pb_pct >= 7.0
+                         and hl_floor == 0.0)
                 if is_hl:
                     hl_count += 1
                 # 更新前次低點
