@@ -293,10 +293,13 @@ export default function Chart({
       localization: {
         // 游標懸浮標籤：左年份　右月/日（日線）或 年份 月/日 時:分（分線）
         timeFormatter: (time) => {
-          // ── 防止 null / undefined 時產生 NaN ──
           if (time == null) return ''
+          // 日線：字串 "YYYY-MM-DD"
+          if (typeof time === 'string') {
+            return `${time.slice(0,4)}　${time.slice(5,7)}/${time.slice(8,10)}`
+          }
+          // BusinessDay { year, month, day }
           if (typeof time === 'object' && 'year' in time) {
-            // 日線/週線/月線：BusinessDay { year, month, day }
             const m = String(time.month).padStart(2, '0')
             const d = String(time.day).padStart(2, '0')
             return `${time.year}　${m}/${d}`
@@ -346,12 +349,22 @@ export default function Chart({
     }
     function fmtTime(t) {
       if (t == null) return ''
+      // 日線：lightweight-charts 傳回字串 "YYYY-MM-DD"
+      if (typeof t === 'string') {
+        const m = t.slice(5, 7)
+        const d = t.slice(8, 10)
+        return `${t.slice(0, 4)}　${m}/${d}`
+      }
+      // BusinessDay 物件 { year, month, day }
       if (typeof t === 'object' && 'year' in t) {
         const m = String(t.month).padStart(2, '0')
         const d = String(t.day).padStart(2, '0')
         return `${t.year}　${m}/${d}`
       }
+      // 分鐘線：unix timestamp（秒）
+      if (typeof t !== 'number' || isNaN(t)) return ''
       const dt = new Date(t * 1000)
+      if (isNaN(dt.getTime())) return ''
       const mo = String(dt.getMonth() + 1).padStart(2, '0')
       const dy = String(dt.getDate()).padStart(2, '0')
       const h  = String(dt.getHours()).padStart(2, '0')
