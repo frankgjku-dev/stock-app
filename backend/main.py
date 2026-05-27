@@ -1819,8 +1819,10 @@ def _yf_quote(symbol: str):
     fi = yf.Ticker(to_yf(symbol)).fast_info
     price = round(float(fi.last_price), 2)
     prev  = round(float(fi.previous_close), 2)
+    # 優先查動態宇宙（含全台股名稱），再 fallback 硬編碼清單
+    name = STOCK_UNIVERSE.get(symbol) or STOCK_LIST.get(symbol, symbol)
     return {
-        "symbol": symbol, "name": STOCK_LIST.get(symbol, symbol),
+        "symbol": symbol, "name": name,
         "price": price, "prev_close": prev,
         "open":  round(float(fi.open), 2),
         "high":  round(float(fi.day_high), 2),
