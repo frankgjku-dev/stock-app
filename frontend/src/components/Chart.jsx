@@ -293,14 +293,18 @@ export default function Chart({
       localization: {
         // 游標懸浮標籤：左年份　右月/日（日線）或 年份 月/日 時:分（分線）
         timeFormatter: (time) => {
-          if (time !== null && typeof time === 'object' && 'year' in time) {
+          // ── 防止 null / undefined 時產生 NaN ──
+          if (time == null) return ''
+          if (typeof time === 'object' && 'year' in time) {
             // 日線/週線/月線：BusinessDay { year, month, day }
             const m = String(time.month).padStart(2, '0')
             const d = String(time.day).padStart(2, '0')
             return `${time.year}　${m}/${d}`
           }
           // 分鐘線：unix timestamp（秒）
+          if (typeof time !== 'number' || isNaN(time)) return ''
           const dt = new Date(time * 1000)
+          if (isNaN(dt.getTime())) return ''
           const mo = String(dt.getMonth() + 1).padStart(2, '0')
           const dy = String(dt.getDate()).padStart(2, '0')
           const h  = String(dt.getHours()).padStart(2, '0')
