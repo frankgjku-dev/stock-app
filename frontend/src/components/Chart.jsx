@@ -386,14 +386,17 @@ export default function Chart({
         const ohlc = param.seriesData?.get(cs)
         const volD = param.seriesData?.get(vs)
         if (ohlc && ohlc.open != null && !isNaN(ohlc.open)) {
-          const up = ohlc.close >= ohlc.open
+          const up    = ohlc.close >= ohlc.open
+          const ma5D  = param.seriesData?.get(S.current.series.ma5)
+          const ma5v  = (ma5D?.value != null && !isNaN(ma5D.value)) ? ma5D.value.toFixed(2) : '--'
           legend.innerHTML =
             `<span class="lg-date">${fmtTime(param.time)}</span>` +
             `<span class="lg-item">開<b>${ohlc.open.toFixed(2)}</b></span>` +
             `<span class="lg-item">高<b style="color:#c85a50">${ohlc.high.toFixed(2)}</b></span>` +
             `<span class="lg-item">低<b style="color:#4a9468">${ohlc.low.toFixed(2)}</b></span>` +
             `<span class="lg-item">收<b style="color:${up ? '#c85a50' : '#4a9468'}">${ohlc.close.toFixed(2)}</b></span>` +
-            `<span class="lg-item">量<b>${fmtVol(volD?.value)}</b></span>`
+            `<span class="lg-item">量<b>${fmtVol(volD?.value)}</b></span>` +
+            `<span class="lg-item" style="color:#b86e2a">MA5<b>${ma5v}</b></span>`
           legend.style.opacity = '1'
         } else {
           legend.style.opacity = '0'
