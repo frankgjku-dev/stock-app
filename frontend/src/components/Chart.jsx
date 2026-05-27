@@ -310,12 +310,14 @@ export default function Chart({
             ctx.restore()
           }
 
-          // 5. % return label at nadir
-          const arcEndPrice = pts[1]
-            ? pts[1].price
+          // 5. % label at nadir — based on nadir PRICE so it live-updates while dragging
+          //    placed arc: use coordinateToPrice(nadY) so dragging the handle updates the %
+          //    preview:    use cursor price (end-point candidate)
+          const arcLabelPrice = pts[1]
+            ? (S.current.series?.candle?.coordinateToPrice(nadY) ?? null)
             : (isPreview ? (S.current.series?.candle?.coordinateToPrice(p2.y) ?? null) : null)
-          if (arcEndPrice != null) {
-            const pct = (arcEndPrice - pts[0].price) / pts[0].price * 100
+          if (arcLabelPrice != null) {
+            const pct = (arcLabelPrice - pts[0].price) / pts[0].price * 100
             const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
             ctx.save()
             ctx.setLineDash([])
