@@ -12,8 +12,17 @@ import numpy as np
 import pytz
 from datetime import datetime, timedelta
 _candle_cache: dict[str, tuple[datetime, list]] = {}
-CACHE_TTL_INTRADAY = timedelta(minutes=5)    # 分鐘線：5 分鐘快取
-CACHE_TTL_DAILY    = timedelta(hours=6)      # 日線/週線/月線：6 小時快取（減少重複請求）
+CACHE_TTL_INTRADAY      = timedelta(minutes=5)   # 分鐘線：5 分鐘快取
+CACHE_TTL_DAILY         = timedelta(hours=4)    # 日線/週線/月線：盤後 4 小時快取
+CACHE_TTL_DAILY_TRADING = timedelta(minutes=3)  # 台股開盤期間：3 分鐘快取，確保當日 K 棒即時出現
+
+def _is_tw_market_open() -> bool:
+    """判斷台股是否正在交易時段（週一~週五 09:00-13:35）"""
+    now = datetime.now(TAIWAN_TZ)
+    if now.weekday() >= 5:          # 週六/日
+        return False
+    t = now.hour * 60 + now.minute  # 換算成分鐘
+    return 9 * 60 <= t <= 13 * 60 + 35
 
 app = FastAPI(title="台股分析平台")
 app.add_middleware(
@@ -1659,7 +1668,8 @@ def _yahoo_chart_sync(symbol: str, period: str = "1y", interval: str = "1d") -> 
                         v = volumes[i] or 0
                         if interval in ("1d", "1wk", "1mo"):
                             from datetime import datetime as _dt
-                            time_val = _dt.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+                            # 用台灣時區轉日期，避免 UTC 換算時跨日（UTC+8 股票用 UTC 會差一天）
+                            time_val = _dt.fromtimestamp(ts, tz=TAIWAN_TZ).strftime("%Y-%m-%d")
                         else:
                             time_val = int(ts)
                         candles.append({"time": time_val, "open": round(float(o), 2),
@@ -1685,7 +1695,12 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
         cache_key = f"{symbol}:{interval}:{period}"
         now = datetime.now()
         is_intraday = interval not in ("1d", "1wk", "1mo")
-        ttl = CACHE_TTL_INTRADAY if is_intraday else CACHE_TTL_DAILY
+        if is_intraday:
+            ttl = CACHE_TTL_INTRADAY
+        elif interval == "1d" and _is_tw_market_open():
+            ttl = CACHE_TTL_DAILY_TRADING  # 開盤中：日線 3 分鐘快取，及時顯示當日 K 棒
+        else:
+            ttl = CACHE_TTL_DAILY
 
         # ── 快取命中 → 直接回傳 ──
         if cache_key in _candle_cache:
