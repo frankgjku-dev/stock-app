@@ -255,27 +255,34 @@ export default function Chart({
           break
         }
         case 'rectangle': {
-          if (!pts[1]) break
-          // 角點允許不在可視範圍：用兜底座標（同 hitTest）
-          const ts2 = S.current.chart?.timeScale()
-          const toRX = (time) => {
-            const x = ts2?.timeToCoordinate(time)
-            if (x != null) return x
-            const vr = ts2?.getVisibleRange()
-            return vr ? (time <= vr.from ? -99999 : 99999) : null
+          if (!p2) break   // p2 = pts[1] pixel 或 d.cursor（預覽）
+          // 完成的矩形：角點允許滾出畫面（兜底座標）
+          if (pts[1]) {
+            const ts2 = S.current.chart?.timeScale()
+            const toRX = (time) => {
+              const x = ts2?.timeToCoordinate(time)
+              if (x != null) return x
+              const vr = ts2?.getVisibleRange()
+              return vr ? (time <= vr.from ? -99999 : 99999) : null
+            }
+            const toRY = (price) => {
+              const y = S.current.series?.candle?.priceToCoordinate(price)
+              if (y != null) return y
+              const topP = S.current.series?.candle?.coordinateToPrice(0) ?? 0
+              return price >= topP ? -99999 : 99999
+            }
+            const rx1 = toRX(pts[0].time), ry1 = toRY(pts[0].price)
+            const rx2 = toRX(pts[1].time), ry2 = toRY(pts[1].price)
+            if (rx1 == null || rx2 == null) break
+            ctx.fillStyle = color + (selected ? '22' : '11')
+            ctx.fillRect(rx1, ry1, rx2 - rx1, ry2 - ry1)
+            ctx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1)
+          } else {
+            // 預覽：p2 = d.cursor（像素座標）
+            ctx.fillStyle = color + '11'
+            ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+            ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
           }
-          const toRY = (price) => {
-            const y = S.current.series?.candle?.priceToCoordinate(price)
-            if (y != null) return y
-            const topP = S.current.series?.candle?.coordinateToPrice(0) ?? 0
-            return price >= topP ? -99999 : 99999
-          }
-          const rx1 = toRX(pts[0].time), ry1 = toRY(pts[0].price)
-          const rx2 = toRX(pts[1].time), ry2 = toRY(pts[1].price)
-          if (rx1 == null || rx2 == null) break
-          ctx.fillStyle = color + (selected ? '22' : '11')
-          ctx.fillRect(rx1, ry1, rx2 - rx1, ry2 - ry1)
-          ctx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1)
           break
         }
         case 'fibonacci': {
@@ -714,8 +721,8 @@ export default function Chart({
       S.current.selectedIdx = hit
       redraw()
     }
-    ct.addEventListener('mousedown', onCtMouseDown)
-    ct.addEventListener('click',     onCtClick)
+    ct.addEventListener('mousedown', onCtMouseDown, true)
+    ct.addEventListener('click',     onCtClick,     true)
 
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width:ct.clientWidth, height:ct.clientHeight })
@@ -733,8 +740,8 @@ export default function Chart({
       ct.removeEventListener('mousedown', onArcMouseDown, true)
       ct.removeEventListener('mousemove', onArcMouseMove, true)
       ct.removeEventListener('mouseup',   onArcMouseUp,   true)
-      ct.removeEventListener('mousedown', onCtMouseDown)
-      ct.removeEventListener('click',     onCtClick)
+      ct.removeEventListener('mousedown', onCtMouseDown, true)
+      ct.removeEventListener('click',     onCtClick,     true)
       chart.remove()
       document.body.removeChild(canvas)
       if (ct.contains(legend)) ct.removeChild(legend)
