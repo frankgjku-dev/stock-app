@@ -255,10 +255,27 @@ export default function Chart({
           break
         }
         case 'rectangle': {
-          if (!p2) break
+          if (!pts[1]) break
+          // 角點允許不在可視範圍：用兜底座標（同 hitTest）
+          const ts2 = S.current.chart?.timeScale()
+          const toRX = (time) => {
+            const x = ts2?.timeToCoordinate(time)
+            if (x != null) return x
+            const vr = ts2?.getVisibleRange()
+            return vr ? (time <= vr.from ? -99999 : 99999) : null
+          }
+          const toRY = (price) => {
+            const y = S.current.series?.candle?.priceToCoordinate(price)
+            if (y != null) return y
+            const topP = S.current.series?.candle?.coordinateToPrice(0) ?? 0
+            return price >= topP ? -99999 : 99999
+          }
+          const rx1 = toRX(pts[0].time), ry1 = toRY(pts[0].price)
+          const rx2 = toRX(pts[1].time), ry2 = toRY(pts[1].price)
+          if (rx1 == null || rx2 == null) break
           ctx.fillStyle = color + (selected ? '22' : '11')
-          ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
-          ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y)
+          ctx.fillRect(rx1, ry1, rx2 - rx1, ry2 - ry1)
+          ctx.strokeRect(rx1, ry1, rx2 - rx1, ry2 - ry1)
           break
         }
         case 'fibonacci': {
@@ -560,18 +577,7 @@ export default function Chart({
     chart.subscribeClick(param => {
       const tool = activeToolRef.current
 
-      if (tool === 'cursor') {
-        if (param.point) {
-          const { x, y } = param.point
-          let hit = -1
-          for (let i = S.current.drawings.length - 1; i >= 0; i--) {
-            if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
-          }
-          S.current.selectedIdx = hit
-          redraw()
-        }
-        return
-      }
+      if (tool === 'cursor') return   // 選取改由原生 click 事件處理，座標與 toPixel 一致
 
       if (!param.point) return
       // param.time 在無 K 棒區域（右側空白、缺口）可能為 null，改用 coordinateToTime 兜底
@@ -690,6 +696,27 @@ export default function Chart({
     ct.addEventListener('mousemove', onArcMouseMove, true)
     ct.addEventListener('mouseup',   onArcMouseUp,   true)
 
+    // ── 游標模式：原生 click 事件選取繪圖 ──────────────────────────────
+    // 用 e.clientX/Y - rect 取得座標，與 toPixel(timeToCoordinate/priceToCoordinate) 同一系統
+    let mouseDownPos = { x: 0, y: 0 }
+    function onCtMouseDown(e) { mouseDownPos = { x: e.clientX, y: e.clientY } }
+    function onCtClick(e) {
+      if (activeToolRef.current !== 'cursor') return
+      // 若是拖拉（chart pan），不觸發選取
+      if (Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y) > 5) return
+      const rect = ct.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      let hit = -1
+      for (let i = S.current.drawings.length - 1; i >= 0; i--) {
+        if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
+      }
+      S.current.selectedIdx = hit
+      redraw()
+    }
+    ct.addEventListener('mousedown', onCtMouseDown)
+    ct.addEventListener('click',     onCtClick)
+
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width:ct.clientWidth, height:ct.clientHeight })
       syncCanvas(); redraw()
@@ -706,6 +733,8 @@ export default function Chart({
       ct.removeEventListener('mousedown', onArcMouseDown, true)
       ct.removeEventListener('mousemove', onArcMouseMove, true)
       ct.removeEventListener('mouseup',   onArcMouseUp,   true)
+      ct.removeEventListener('mousedown', onCtMouseDown)
+      ct.removeEventListener('click',     onCtClick)
       chart.remove()
       document.body.removeChild(canvas)
       if (ct.contains(legend)) ct.removeChild(legend)
