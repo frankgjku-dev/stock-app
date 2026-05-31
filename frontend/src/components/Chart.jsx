@@ -100,6 +100,33 @@ export default function Chart({
   function hitTest(d, mx, my) {
     const { type, pts } = d
     if (!pts[0]) return false
+
+    // ── 矩形：允許角點不在可視範圍（捲軸移出畫面）──
+    if (type === 'rectangle') {
+      if (!pts[1]) return false
+      const { chart, series } = S.current
+      if (!chart || !series.candle) return false
+      const ts = chart.timeScale()
+      const toX = (time) => {
+        const x = ts.timeToCoordinate(time)
+        if (x != null) return x
+        const vr = ts.getVisibleRange()
+        return vr ? (time <= vr.from ? -99999 : 99999) : null
+      }
+      const toY = (price) => {
+        const y = series.candle.priceToCoordinate(price)
+        if (y != null) return y
+        const topPrice = series.candle.coordinateToPrice(0) ?? 0
+        return price >= topPrice ? -99999 : 99999
+      }
+      const x1 = toX(pts[0].time), y1 = toY(pts[0].price)
+      const x2 = toX(pts[1].time), y2 = toY(pts[1].price)
+      if (x1 == null || x2 == null) return false
+      const [lx, rx] = [Math.min(x1, x2), Math.max(x1, x2)]
+      const [ty, by] = [Math.min(y1, y2), Math.max(y1, y2)]
+      return mx >= lx && mx <= rx && my >= ty && my <= by
+    }
+
     const p1 = toPixel(pts[0].price, pts[0].time)
     if (!p1) return false
     const T = 9
@@ -108,11 +135,6 @@ export default function Chart({
     if (!pts[1]) return false
     const p2 = toPixel(pts[1].price, pts[1].time)
     if (!p2) return false
-    if (type === 'rectangle') {
-      const [lx,rx] = [Math.min(p1.x,p2.x), Math.max(p1.x,p2.x)]
-      const [ty,by] = [Math.min(p1.y,p2.y), Math.max(p1.y,p2.y)]
-      return mx>=lx && mx<=rx && my>=ty && my<=by
-    }
     if (type === 'arc') {
       // Cubic bezier U-shape: sample along curve + check draggable nadir handle
       const arcHt   = Math.abs(p2.x - p1.x)
@@ -551,7 +573,10 @@ export default function Chart({
         return
       }
 
-      if (!param.point || !param.time) return
+      if (!param.point) return
+      // param.time 在無 K 棒區域（右側空白、缺口）可能為 null，改用 coordinateToTime 兜底
+      const clickTime = param.time ?? chart.timeScale().coordinateToTime?.(param.point.x)
+      if (!clickTime) return
 
       // ── 決定資料點（有 Ctrl 吸附就用吸附值）──
       let dp
@@ -570,7 +595,7 @@ export default function Chart({
           }
         }
         if (price == null) return
-        dp = { time: param.time, price: Number(price) }
+        dp = { time: clickTime, price: Number(price) }
       }
 
       const color = drawColorRef.current
