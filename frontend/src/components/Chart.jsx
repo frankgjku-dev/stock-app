@@ -259,12 +259,15 @@ export default function Chart({
             ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y)
           }
           ctx.stroke(); ctx.setLineDash([])
-          const anchors = [p1, ...(pts[1] ? [toPixel(pts[1])] : [])].filter(Boolean)
-          anchors.forEach(pt => {
-            ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI*2)
-            ctx.fillStyle = strokeColor; ctx.fill()
-            ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
-          })
+          // 未選取時：小實心圓點；選取時由 switch 後的通用 handle 負責
+          if (!selected) {
+            const anchors = [p1, ...(pts[1] ? [toPixel(pts[1])] : [])].filter(Boolean)
+            anchors.forEach(pt => {
+              ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI*2)
+              ctx.fillStyle = strokeColor; ctx.fill()
+              ctx.strokeStyle = 'rgba(250,245,236,0.9)'; ctx.lineWidth = 1.5; ctx.stroke()
+            })
+          }
           break
         }
         case 'rectangle': {
@@ -376,6 +379,25 @@ export default function Chart({
           break
         }
       }
+
+      // ── 通用端點 handle（選取 + 非預覽 + 非 arc，arc 有自己的 handle）──
+      // 所有畫線選取後在端點顯示白圓，使用者可拖拉調整長度／形狀
+      if (selected && !isPreview && type !== 'arc') {
+        pts.forEach((pt, pi) => {
+          if (!pt) return
+          const pp = pi === 0 ? p1 : toPixel(pt)
+          if (!pp) return
+          ctx.save()
+          ctx.setLineDash([])
+          ctx.fillStyle   = 'rgba(250,245,236,0.95)'
+          ctx.strokeStyle = strokeColor
+          ctx.lineWidth   = 2
+          ctx.beginPath(); ctx.arc(pp.x, pp.y, 6, 0, Math.PI * 2)
+          ctx.fill(); ctx.stroke()
+          ctx.restore()
+        })
+      }
+
       ctx.restore()
     }
 
@@ -713,31 +735,84 @@ export default function Chart({
     ct.addEventListener('mouseup',   onArcMouseUp,   true)
 
     // ── 游標模式：拖拉移動畫線 ────────────────────────────────────────
-    let moveDrag     = null   // { drawingIdx, startCX, startCY, originalPts, type }
-    let potentialDrag = null  // 尚未確認是拖拉，等超過 5px
+    let moveDrag      = null   // { drawingIdx, startCX, startCY, originalPts, type }
+    let potentialDrag = null   // 尚未確認是拖拉，等超過 5px
+    let endptDrag     = null   // { drawingIdx, ptIdx } — 端點拖拉（改長度/形狀）
 
     function onMoveMouseDown(e) {
       if (activeToolRef.current !== 'cursor') return
       if (arcDrag) return   // arc nadir 拖拉優先
       const rect = ct.getBoundingClientRect()
       const x = e.clientX - rect.left, y = e.clientY - rect.top
+
+      // ── 優先：偵測是否點到已選取畫線的端點 handle ──
+      const { selectedIdx, drawings } = S.current
+      if (selectedIdx >= 0) {
+        const d = drawings[selectedIdx]
+        for (let pi = 0; pi < d.pts.length; pi++) {
+          const pp = pi === 0
+            ? toPixel(d.pts[0])
+            : toPixel(d.pts[pi])
+          if (pp && Math.hypot(x - pp.x, y - pp.y) < 10) {
+            endptDrag = { drawingIdx: selectedIdx, ptIdx: pi }
+            chart.applyOptions({ handleScroll: { pressedMouseMove: false, mouseWheel: true, horzTouchDrag: false } })
+            ct.style.cursor = 'crosshair'
+            e.stopPropagation()
+            return
+          }
+        }
+      }
+
+      // ── 整條拖拉 ──
       let hit = -1
-      for (let i = S.current.drawings.length - 1; i >= 0; i--) {
-        if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
+      for (let i = drawings.length - 1; i >= 0; i--) {
+        if (hitTest(drawings[i], x, y)) { hit = i; break }
       }
       if (hit < 0) return
       potentialDrag = {
         drawingIdx: hit,
         startCX: e.clientX, startCY: e.clientY,
-        originalPts: S.current.drawings[hit].pts.map(p => ({ ...p })),
-        type: S.current.drawings[hit].type,
+        originalPts: drawings[hit].pts.map(p => ({ ...p })),
+        type: drawings[hit].type,
       }
     }
 
     function onMoveMouseMove(e) {
       const rect = ct.getBoundingClientRect()
 
-      // ── 拖拉中：即時更新端點位置 ──
+      // ── 端點拖拉：只更新單一端點（改長度 / 形狀）──
+      if (endptDrag) {
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top
+        const { chart: c, series } = S.current
+        if (!c || !series.candle) return
+        const ts  = c.timeScale()
+        const cs2 = series.candle
+        const d   = S.current.drawings[endptDrag.drawingIdx]
+        const isH = d.type === 'horizontal'
+        const isV = d.type === 'vertical'
+        const origPt = d.pts[endptDrag.ptIdx]
+        // 水平線只改 price（y），垂直線只改 time（x）
+        const price = isV ? origPt.price : Number(cs2.coordinateToPrice(my) ?? origPt.price)
+        let newPt
+        if (isH) {
+          newPt = { ...origPt, price }
+        } else {
+          const newTime = ts.coordinateToTime(mx)
+          if (newTime != null) {
+            newPt = { time: newTime, price }
+          } else {
+            const newLogical = ts.coordinateToLogical(mx)
+            newPt = newLogical != null ? { time: null, logical: newLogical, price } : origPt
+          }
+        }
+        const newPts = [...d.pts]
+        newPts[endptDrag.ptIdx] = newPt
+        S.current.drawings[endptDrag.drawingIdx] = { ...d, pts: newPts }
+        redraw()
+        return
+      }
+
+      // ── 整條拖拉中：即時更新端點位置 ──
       if (moveDrag) {
         const dx = e.clientX - moveDrag.startCX
         const dy = e.clientY - moveDrag.startCY
@@ -797,6 +872,14 @@ export default function Chart({
 
     function onMoveMouseUp() {
       potentialDrag = null
+      if (endptDrag) {
+        endptDrag = null
+        _wasDragging = true
+        chart.applyOptions({ handleScroll: { pressedMouseMove: true, mouseWheel: true, horzTouchDrag: true } })
+        ct.style.cursor = 'default'
+        onDrawingsChangeRef.current?.(S.current.drawings)
+        return
+      }
       if (!moveDrag) return
       _wasDragging = true
       chart.applyOptions({ handleScroll: { pressedMouseMove: true, mouseWheel: true, horzTouchDrag: true } })
