@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../config'
 
+/** 判斷目前是否在台股交易時段（前端時區無關，直接算台北時間） */
+function isTWMarketOpen() {
+  const tw = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+  const d = tw.getDay()                           // 0=日, 6=六
+  if (d === 0 || d === 6) return false
+  const t = tw.getHours() * 60 + tw.getMinutes()
+  return t >= 9 * 60 && t <= 13 * 60 + 40        // 09:00 ~ 13:40
+}
+
 export default function useStockData(symbol, interval, period) {
   const [candles, setCandles] = useState([])
   const [quote,   setQuote]   = useState(null)
@@ -53,7 +62,29 @@ export default function useStockData(symbol, interval, period) {
     })()
   }, [symbol, interval, period])
 
-  // Real-time quote polling (every 5 s)
+  // ── 開盤期間每 3 分鐘靜默刷新日線 K 棒 ──────────────────────
+  // 後端已設定開盤期間 TTL=3min，前端也同步輪詢，確保當日 K 棒即時出現
+  useEffect(() => {
+    if (!symbol || !['1d','1wk','1mo'].includes(interval)) return
+
+    const url = `${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`
+
+    async function silentRefresh() {
+      if (!isTWMarketOpen()) return
+      try {
+        const res = await fetch(url)
+        const ct  = res.headers.get('content-type') || ''
+        if (!ct.includes('application/json')) return
+        const data = await res.json()
+        if (data.candles?.length) setCandles(data.candles)   // 直接更新，不觸發 loading
+      } catch { /* 靜默失敗 */ }
+    }
+
+    const timer = setInterval(silentRefresh, 3 * 60 * 1000)  // 每 3 分鐘
+    return () => clearInterval(timer)
+  }, [symbol, interval, period])
+
+  // Real-time quote polling (every 30 s)
   useEffect(() => {
     if (!symbol) return
 
@@ -68,7 +99,7 @@ export default function useStockData(symbol, interval, period) {
     }
 
     fetchQuote()
-    pollRef.current = setInterval(fetchQuote, 30000)  // 30秒輪詢，避免打爆 API
+    pollRef.current = setInterval(fetchQuote, 30000)
     return () => clearInterval(pollRef.current)
   }, [symbol])
 

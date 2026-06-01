@@ -1783,7 +1783,9 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
                                         "low":round(l,2),"close":round(c2,2),"volume":v})
                     except Exception: continue
 
-        # ── 日線：向 FinMind 補近 60 天，填入 Yahoo 漏掉的最近 K 棒 ──
+        # ── 日線：向 FinMind 補近 60 天，填入 / 更新 Yahoo 漏掉或不完整的最近 K 棒 ──
+        # Yahoo 有時在開盤中回傳不完整的今日 bar（close 未定），FinMind 的即時報價更準確；
+        # 同時也補 Yahoo 完全沒有的新 bar（gap 或延遲）。
         if candles and interval == "1d":
             try:
                 recent_fm = await asyncio.wait_for(
@@ -1793,11 +1795,21 @@ async def get_candles(symbol: str, interval: str = "1d", period: str = "1y"):
                 if recent_fm:
                     existing_dates = {c["time"] for c in candles}
                     last_date      = max(existing_dates)
+                    # 用 FinMind 資料建立快查表
+                    fm_map = {b["time"]: b for b in recent_fm}
+                    updated = []
+                    for c in candles:
+                        if c["time"] == last_date and c["time"] in fm_map:
+                            # 最新一根 bar：用 FinMind 資料取代（可能更即時）
+                            updated.append(fm_map[c["time"]])
+                        else:
+                            updated.append(c)
+                    # 補 FinMind 有、Yahoo 沒有的新 bar
                     for bar in recent_fm:
                         if bar["time"] > last_date and bar["time"] not in existing_dates:
-                            candles.append(bar)
+                            updated.append(bar)
                             existing_dates.add(bar["time"])
-                    candles.sort(key=lambda x: x["time"])
+                    candles = sorted(updated, key=lambda x: x["time"])
             except Exception:
                 pass  # FinMind 補充失敗不影響主資料
 
