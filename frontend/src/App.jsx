@@ -424,7 +424,8 @@ export default function App() {
               )}
               <Chart
                 candles={candles} indicators={indicators}
-                activeTool={activeTool} drawColor={drawColor} clearRef={chartClearRef}
+                activeTool={activeTool} onToolChange={setActiveTool}
+                drawColor={drawColor} clearRef={chartClearRef}
                 drawingsKey={drawingsKey}
                 savedDrawings={drawings[drawingsKey]}
                 onDrawingsChange={handleDrawingsChange}

@@ -62,7 +62,7 @@ function lighten(hex) {
 }
 
 export default function Chart({
-  candles, indicators, activeTool, drawColor = '#b86e2a', clearRef,
+  candles, indicators, activeTool, onToolChange, drawColor = '#b86e2a', clearRef,
   drawingsKey, savedDrawings, onDrawingsChange,
   tradeMarkers,   // [{ time, position, color, shape, text }] — 回測買賣點標記
 }) {
@@ -70,10 +70,12 @@ export default function Chart({
   const activeToolRef       = useRef(activeTool)
   const drawColorRef        = useRef(drawColor)
   const onDrawingsChangeRef = useRef(onDrawingsChange)
+  const onToolChangeRef     = useRef(onToolChange)
   const tradeMarkersRef     = useRef(tradeMarkers)
   activeToolRef.current       = activeTool
   drawColorRef.current        = drawColor
   onDrawingsChangeRef.current = onDrawingsChange
+  onToolChangeRef.current     = onToolChange
   tradeMarkersRef.current     = tradeMarkers
 
   const S = useRef({
@@ -816,7 +818,13 @@ export default function Chart({
       }
 
       if (e.key === 'Escape') {
-        S.current.preview = null; S.current.selectedIdx = -1; S.current.redraw?.()
+        S.current.preview = null
+        S.current.selectedIdx = -1
+        S.current.redraw?.()
+        // 若正在使用畫線工具，Esc 切回游標
+        if (activeToolRef.current !== 'cursor') {
+          onToolChangeRef.current?.('cursor')
+        }
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const { selectedIdx, drawings } = S.current
