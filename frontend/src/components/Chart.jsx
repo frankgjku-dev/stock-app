@@ -89,10 +89,16 @@ export default function Chart({
   })
 
   /* ── toPixel / hitTest：只用到 S，可放在元件層級 ── */
-  function toPixel(price, time) {
+  // pt = { price, time }  ← 一般資料點（K 棒時間）
+  //      { price, logical } ← 超出最後 K 棒的未來區域（logical index）
+  function toPixel(pt) {
+    if (!pt) return null
     const { chart, series } = S.current
     if (!chart || !series.candle) return null
-    const x = chart.timeScale().timeToCoordinate(time)
+    const { price, time, logical } = pt
+    const x = (time != null)
+      ? chart.timeScale().timeToCoordinate(time)
+      : (logical != null ? chart.timeScale().logicalToCoordinate(logical) : null)
     const y = series.candle.priceToCoordinate(price)
     return (x != null && y != null) ? { x, y } : null
   }
@@ -101,39 +107,44 @@ export default function Chart({
     const { type, pts } = d
     if (!pts[0]) return false
 
-    // ── 矩形：允許角點不在可視範圍（捲軸移出畫面）──
+    // ── 矩形：允許角點不在可視範圍（捲軸移出畫面 / 未來區域）──
     if (type === 'rectangle') {
       if (!pts[1]) return false
       const { chart, series } = S.current
       if (!chart || !series.candle) return false
       const ts = chart.timeScale()
-      const toX = (time) => {
-        const x = ts.timeToCoordinate(time)
-        if (x != null) return x
-        const vr = ts.getVisibleRange()
-        return vr ? (time <= vr.from ? -99999 : 99999) : null
+      // 處理一般時間 & logical（未來區域）兩種端點
+      const toX = (pt) => {
+        if (pt.time != null) {
+          const x = ts.timeToCoordinate(pt.time)
+          if (x != null) return x
+          const vr = ts.getVisibleRange()
+          return vr ? (pt.time <= vr.from ? -99999 : 99999) : null
+        }
+        if (pt.logical != null) return ts.logicalToCoordinate(pt.logical) ?? 99999
+        return null
       }
-      const toY = (price) => {
-        const y = series.candle.priceToCoordinate(price)
+      const toY = (pt) => {
+        const y = series.candle.priceToCoordinate(pt.price)
         if (y != null) return y
         const topPrice = series.candle.coordinateToPrice(0) ?? 0
-        return price >= topPrice ? -99999 : 99999
+        return pt.price >= topPrice ? -99999 : 99999
       }
-      const x1 = toX(pts[0].time), y1 = toY(pts[0].price)
-      const x2 = toX(pts[1].time), y2 = toY(pts[1].price)
+      const x1 = toX(pts[0]), y1 = toY(pts[0])
+      const x2 = toX(pts[1]), y2 = toY(pts[1])
       if (x1 == null || x2 == null) return false
       const [lx, rx] = [Math.min(x1, x2), Math.max(x1, x2)]
       const [ty, by] = [Math.min(y1, y2), Math.max(y1, y2)]
       return mx >= lx && mx <= rx && my >= ty && my <= by
     }
 
-    const p1 = toPixel(pts[0].price, pts[0].time)
+    const p1 = toPixel(pts[0])
     if (!p1) return false
     const T = 9
     if (type === 'horizontal') return Math.abs(my - p1.y) < T
     if (type === 'vertical')   return Math.abs(mx - p1.x) < T
     if (!pts[1]) return false
-    const p2 = toPixel(pts[1].price, pts[1].time)
+    const p2 = toPixel(pts[1])
     if (!p2) return false
     if (type === 'arc') {
       // Cubic bezier U-shape: sample along curve + check draggable nadir handle
@@ -195,7 +206,7 @@ export default function Chart({
     function paint(ctx, d, W, H, isPreview, selected) {
       const { type, pts, color = '#b86e2a' } = d
       if (!pts[0]) return
-      const p1 = toPixel(pts[0].price, pts[0].time)
+      const p1 = toPixel(pts[0])
       if (!p1) return
       const strokeColor = selected ? lighten(color) : color
 
@@ -207,7 +218,7 @@ export default function Chart({
       ctx.font = '11px Inter, system-ui, sans-serif'
 
       const p2 = pts[1]
-        ? toPixel(pts[1].price, pts[1].time)
+        ? toPixel(pts[1])
         : (d.cursor ?? null)
 
       switch (type) {
@@ -246,7 +257,7 @@ export default function Chart({
             ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y)
           }
           ctx.stroke(); ctx.setLineDash([])
-          const anchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
+          const anchors = [p1, ...(pts[1] ? [toPixel(pts[1])] : [])].filter(Boolean)
           anchors.forEach(pt => {
             ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI*2)
             ctx.fillStyle = strokeColor; ctx.fill()
@@ -308,7 +319,7 @@ export default function Chart({
           ctx.setLineDash([])
 
           // 3. Endpoint anchor dots
-          const arcAnchors = [p1, ...(pts[1] ? [toPixel(pts[1].price, pts[1].time)] : [])].filter(Boolean)
+          const arcAnchors = [p1, ...(pts[1] ? [toPixel(pts[1])] : [])].filter(Boolean)
           arcAnchors.forEach(pt => {
             ctx.beginPath(); ctx.arc(pt.x, pt.y, selected ? 5 : 3, 0, Math.PI * 2)
             ctx.fillStyle = strokeColor; ctx.fill()
@@ -575,9 +586,8 @@ export default function Chart({
       }
 
       if (!param.point) return
-      // param.time 在無 K 棒區域（右側空白、缺口）可能為 null，改用 coordinateToTime 兜底
+      // param.time 在無 K 棒區域可能為 null，先試 coordinateToTime 兜底
       const clickTime = param.time ?? chart.timeScale().coordinateToTime?.(param.point.x)
-      if (!clickTime) return
 
       // ── 決定資料點（有 Ctrl 吸附就用吸附值）──
       let dp
@@ -596,7 +606,14 @@ export default function Chart({
           }
         }
         if (price == null) return
-        dp = { time: clickTime, price: Number(price) }
+        if (clickTime) {
+          dp = { time: clickTime, price: Number(price) }
+        } else {
+          // 超出最後 K 棒的未來區域：改用 logical index 記錄 x 位置
+          const logical = chart.timeScale().coordinateToLogical?.(param.point.x) ?? null
+          if (logical == null) return
+          dp = { time: null, logical, price: Number(price) }
+        }
       }
 
       const color = drawColorRef.current
@@ -626,8 +643,8 @@ export default function Chart({
 
     function getArcNadir(d) {
       if (d.type !== 'arc' || !d.pts[1]) return null
-      const pp1 = toPixel(d.pts[0].price, d.pts[0].time)
-      const pp2 = toPixel(d.pts[1].price, d.pts[1].time)
+      const pp1 = toPixel(d.pts[0])
+      const pp2 = toPixel(d.pts[1])
       if (!pp1 || !pp2) return null
       const aw = Math.abs(pp2.x - pp1.x)
       const ad = aw * (d.arcDepthFactor ?? 0.75)
