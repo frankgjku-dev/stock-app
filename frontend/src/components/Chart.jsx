@@ -508,6 +508,13 @@ export default function Chart({
       if (v >= 1e4) return (v / 1e4).toFixed(0) + '萬'
       return String(v)
     }
+    // 台股：1 張 = 1,000 股，成交張數 = volume / 1000
+    function fmtZhang(v) {
+      if (v == null || isNaN(v)) return '--'
+      const z = Math.round(v / 1000)
+      if (z >= 10000) return (z / 10000).toFixed(1) + '萬張'
+      return z.toLocaleString() + '張'
+    }
     function fmtTime(t) {
       if (t == null) return ''
       // 日線：lightweight-charts 傳回字串 "YYYY-MM-DD"
@@ -557,6 +564,7 @@ export default function Chart({
             `<span class="lg-item">低<b style="color:#4a9468">${ohlc.low.toFixed(2)}</b></span>` +
             `<span class="lg-item">收<b style="color:${up ? '#c85a50' : '#4a9468'}">${ohlc.close.toFixed(2)}</b></span>` +
             `<span class="lg-item">量<b>${fmtVol(volD?.value)}</b></span>` +
+            `<span class="lg-item">張<b>${fmtZhang(volD?.value)}</b></span>` +
             `<span class="lg-item" style="color:#b86e2a">MA5<b>${ma5v}</b></span>`
           legend.style.opacity = '1'
         } else {
