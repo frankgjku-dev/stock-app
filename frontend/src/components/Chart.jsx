@@ -571,10 +571,12 @@ export default function Chart({
     })
 
     // 點擊 → 畫線
+    let _wasDragging = false   // 拖拉結束後防止 subscribeClick 誤清選取
     chart.subscribeClick(param => {
       const tool = activeToolRef.current
 
       if (tool === 'cursor') {
+        if (_wasDragging) { _wasDragging = false; return }   // 拖拉結束不改選取
         if (param.point) {
           const { x, y } = param.point
           let hit = -1
@@ -710,6 +712,103 @@ export default function Chart({
     ct.addEventListener('mousemove', onArcMouseMove, true)
     ct.addEventListener('mouseup',   onArcMouseUp,   true)
 
+    // ── 游標模式：拖拉移動畫線 ────────────────────────────────────────
+    let moveDrag     = null   // { drawingIdx, startCX, startCY, originalPts, type }
+    let potentialDrag = null  // 尚未確認是拖拉，等超過 5px
+
+    function onMoveMouseDown(e) {
+      if (activeToolRef.current !== 'cursor') return
+      if (arcDrag) return   // arc nadir 拖拉優先
+      const rect = ct.getBoundingClientRect()
+      const x = e.clientX - rect.left, y = e.clientY - rect.top
+      let hit = -1
+      for (let i = S.current.drawings.length - 1; i >= 0; i--) {
+        if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
+      }
+      if (hit < 0) return
+      potentialDrag = {
+        drawingIdx: hit,
+        startCX: e.clientX, startCY: e.clientY,
+        originalPts: S.current.drawings[hit].pts.map(p => ({ ...p })),
+        type: S.current.drawings[hit].type,
+      }
+    }
+
+    function onMoveMouseMove(e) {
+      const rect = ct.getBoundingClientRect()
+
+      // ── 拖拉中：即時更新端點位置 ──
+      if (moveDrag) {
+        const dx = e.clientX - moveDrag.startCX
+        const dy = e.clientY - moveDrag.startCY
+        const { chart: c, series } = S.current
+        if (!c || !series.candle) return
+        const ts  = c.timeScale()
+        const cs2 = series.candle
+        const isH = moveDrag.type === 'horizontal'  // 水平線：只移 y
+        const isV = moveDrag.type === 'vertical'    // 垂直線：只移 x
+        const newPts = moveDrag.originalPts.map(pt => {
+          const origX = pt.time != null
+            ? ts.timeToCoordinate(pt.time)
+            : (pt.logical != null ? ts.logicalToCoordinate(pt.logical) : null)
+          const origY = cs2.priceToCoordinate(pt.price)
+          if (origX == null || origY == null) return pt
+          const newX = isH ? origX : origX + dx
+          const newY = isV ? origY : origY + dy
+          const newPrice = isV ? pt.price : Number(cs2.coordinateToPrice(newY) ?? pt.price)
+          if (isH) return { ...pt, price: newPrice }
+          const newTime = ts.coordinateToTime(newX)
+          if (newTime != null) return { time: newTime, price: newPrice }
+          const newLogical = ts.coordinateToLogical(newX)
+          return newLogical != null ? { time: null, logical: newLogical, price: newPrice } : pt
+        })
+        S.current.drawings[moveDrag.drawingIdx] = {
+          ...S.current.drawings[moveDrag.drawingIdx], pts: newPts,
+        }
+        S.current.selectedIdx = moveDrag.drawingIdx
+        redraw()
+        return
+      }
+
+      // ── 超過 5px 才正式啟動拖拉 ──
+      if (potentialDrag) {
+        if (Math.hypot(e.clientX - potentialDrag.startCX, e.clientY - potentialDrag.startCY) > 5) {
+          moveDrag = potentialDrag
+          potentialDrag = null
+          chart.applyOptions({ handleScroll: { pressedMouseMove: false, mouseWheel: true, horzTouchDrag: false } })
+          ct.style.cursor = 'grabbing'
+        }
+        return
+      }
+
+      // ── 懸停：顯示 grab cursor（ns-resize / grabbing 不覆蓋）──
+      if (activeToolRef.current === 'cursor' && !arcDrag) {
+        const cur = ct.style.cursor
+        if (cur !== 'ns-resize' && cur !== 'grabbing') {
+          const x = e.clientX - rect.left, y = e.clientY - rect.top
+          let onAny = false
+          for (let i = S.current.drawings.length - 1; i >= 0; i--) {
+            if (hitTest(S.current.drawings[i], x, y)) { onAny = true; break }
+          }
+          ct.style.cursor = onAny ? 'grab' : 'default'
+        }
+      }
+    }
+
+    function onMoveMouseUp() {
+      potentialDrag = null
+      if (!moveDrag) return
+      _wasDragging = true
+      chart.applyOptions({ handleScroll: { pressedMouseMove: true, mouseWheel: true, horzTouchDrag: true } })
+      ct.style.cursor = 'default'
+      onDrawingsChangeRef.current?.(S.current.drawings)
+      moveDrag = null
+    }
+
+    ct.addEventListener('mousedown', onMoveMouseDown, true)
+    ct.addEventListener('mousemove', onMoveMouseMove, true)
+    ct.addEventListener('mouseup',   onMoveMouseUp,   true)
+
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width:ct.clientWidth, height:ct.clientHeight })
       syncCanvas(); redraw()
@@ -726,6 +825,9 @@ export default function Chart({
       ct.removeEventListener('mousedown', onArcMouseDown, true)
       ct.removeEventListener('mousemove', onArcMouseMove, true)
       ct.removeEventListener('mouseup',   onArcMouseUp,   true)
+      ct.removeEventListener('mousedown', onMoveMouseDown, true)
+      ct.removeEventListener('mousemove', onMoveMouseMove, true)
+      ct.removeEventListener('mouseup',   onMoveMouseUp,   true)
       chart.remove()
       document.body.removeChild(canvas)
       if (ct.contains(legend)) ct.removeChild(legend)
