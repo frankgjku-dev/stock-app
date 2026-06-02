@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { API_BASE } from '../config'
 
 export default function WatchlistSidebar({
   watchlist, currentSymbol,
   onSelectSymbol, onToggleInGroup,
   onAddGroup, onDeleteGroup, onRenameGroup,
+  onReorderStock,   // (groupId, fromIdx, toIdx)
 }) {
   const [collapsed,    setCollapsed]    = useState({})
   const [addingGroup,  setAddingGroup]  = useState(false)
   const [newName,      setNewName]      = useState('')
   const [editingId,    setEditingId]    = useState(null)
   const [editName,     setEditName]     = useState('')
-  const [nameMap,      setNameMap]      = useState({})  // { symbol: name }
+  const [nameMap,      setNameMap]      = useState({})
+
+  // drag state
+  const dragSrc = useRef(null)   // { groupId, idx }
+  const [dragOver, setDragOver] = useState(null)  // { groupId, idx }
 
   useEffect(() => {
     fetch(`${API_BASE}/api/stocks/list`)
@@ -36,6 +41,29 @@ export default function WatchlistSidebar({
   }
   function toggleCollapse(id) {
     setCollapsed(p => ({ ...p, [id]: !p[id] }))
+  }
+
+  // ── 拖拉排序 helpers ──────────────────────────────
+  function handleDragStart(e, groupId, idx) {
+    dragSrc.current = { groupId, idx }
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', '')   // Firefox 需要
+  }
+  function handleDragOver(e, groupId, idx) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (!dragOver || dragOver.groupId !== groupId || dragOver.idx !== idx)
+      setDragOver({ groupId, idx })
+  }
+  function handleDrop(e, groupId, toIdx) {
+    e.preventDefault()
+    const src = dragSrc.current
+    if (!src || src.groupId !== groupId) return   // 跨群組暫不支援
+    if (src.idx !== toIdx) onReorderStock(groupId, src.idx, toIdx)
+    dragSrc.current = null; setDragOver(null)
+  }
+  function handleDragEnd() {
+    dragSrc.current = null; setDragOver(null)
   }
 
   return (
@@ -122,28 +150,38 @@ export default function WatchlistSidebar({
                     從 K 線圖 ★ 加入股票
                   </div>
                 )}
-                {group.stocks.map(sym => (
-                  <div
-                    key={sym}
-                    className={`wl-row ${sym === currentSymbol ? 'current' : ''}`}
-                    onClick={() => onSelectSymbol(sym)}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                      <span className="wl-sym">{sym}</span>
-                      {nameMap[sym] && (
-                        <span style={{
-                          fontSize: 11, color: 'var(--text-3)',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>{nameMap[sym]}</span>
-                      )}
+                {group.stocks.map((sym, si) => {
+                  const isOver = dragOver?.groupId === group.id && dragOver?.idx === si
+                                 && dragSrc.current?.idx !== si
+                  return (
+                    <div
+                      key={sym}
+                      draggable
+                      onDragStart={e => handleDragStart(e, group.id, si)}
+                      onDragOver={e  => handleDragOver(e,  group.id, si)}
+                      onDrop={e      => handleDrop(e,      group.id, si)}
+                      onDragEnd={handleDragEnd}
+                      className={`wl-row${sym === currentSymbol ? ' current' : ''}${isOver ? ' wl-drag-over' : ''}`}
+                      onClick={() => onSelectSymbol(sym)}
+                    >
+                      <span className="wl-handle" title="拖拉排序">⠿</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                        <span className="wl-sym">{sym}</span>
+                        {nameMap[sym] && (
+                          <span style={{
+                            fontSize: 11, color: 'var(--text-3)',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{nameMap[sym]}</span>
+                        )}
+                      </div>
+                      <button
+                        className="wl-rm"
+                        onClick={e => { e.stopPropagation(); onToggleInGroup(sym, group.id) }}
+                        title="移除"
+                      >✕</button>
                     </div>
-                    <button
-                      className="wl-rm"
-                      onClick={e => { e.stopPropagation(); onToggleInGroup(sym, group.id) }}
-                      title="移除"
-                    >✕</button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

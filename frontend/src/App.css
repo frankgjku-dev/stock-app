@@ -1179,9 +1179,17 @@ body {
   padding: 6px 14px; line-height: 1.5;
 }
 
+.wl-handle {
+  cursor: grab; color: var(--text-3); font-size: 13px;
+  padding: 0 3px; opacity: 0; transition: opacity var(--trans);
+  flex-shrink: 0; user-select: none;
+}
+.wl-row:hover .wl-handle { opacity: 1; }
+.wl-row.wl-drag-over { border-top: 2px solid var(--accent); }
+
 .wl-row {
   display: flex; align-items: center;
-  padding: 5px 10px 5px 22px;
+  padding: 5px 10px 5px 12px;
   cursor: pointer; transition: background var(--trans);
   gap: 4px;
 }

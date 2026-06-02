@@ -282,6 +282,19 @@ export default function App() {
     }))
   }, [])
 
+  const reorderStock = useCallback((groupId, fromIdx, toIdx) => {
+    setWatchlist(prev => ({
+      ...prev,
+      groups: prev.groups.map(g => {
+        if (g.id !== groupId) return g
+        const stocks = [...g.stocks]
+        const [item] = stocks.splice(fromIdx, 1)
+        stocks.splice(toIdx, 0, item)
+        return { ...g, stocks }
+      }),
+    }))
+  }, [])
+
   /* ── holdings 操作 ── */
   const addHolding = useCallback((h) => {
     setHoldings(prev => {
@@ -439,6 +452,7 @@ export default function App() {
             watchlist={watchlist} currentSymbol={symbol}
             onSelectSymbol={setSymbol} onToggleInGroup={toggleInGroup}
             onAddGroup={addGroup} onDeleteGroup={deleteGroup} onRenameGroup={renameGroup}
+            onReorderStock={reorderStock}
           />
         </div>
       )}
