@@ -396,8 +396,8 @@ export default function App() {
             onClick={() => setTab(t.id)}
           >
             {t.label}
-            {t.id === 'holdings' && holdings.length > 0 && (
-              <span className="tab-badge">{holdings.length}</span>
+            {t.id === 'holdings' && holdings.filter(h => h.status !== 'sold').length > 0 && (
+              <span className="tab-badge">{holdings.filter(h => h.status !== 'sold').length}</span>
             )}
           </button>
         ))}
