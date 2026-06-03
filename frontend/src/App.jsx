@@ -250,8 +250,20 @@ export default function App() {
     })
     setTab('chart')
   }, [])
+  const MA_KEYS = ['ma5','ma10','ma20','ma60','ma120','ma240']
   const toggleIndicator = useCallback((key) => {
-    setIndicators(prev => ({ ...prev, [key]: !prev[key] }))
+    setIndicators(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      // BB 開啟 → 關閉所有均線；BB 關閉 → 恢復預設均線（MA5/10/20）
+      if (key === 'bb') {
+        if (next.bb) {
+          MA_KEYS.forEach(k => { next[k] = false })
+        } else {
+          next.ma5 = true; next.ma10 = true; next.ma20 = true
+        }
+      }
+      return next
+    })
   }, [])
 
   /* ── watchlist 操作 ── */

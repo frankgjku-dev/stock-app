@@ -620,10 +620,10 @@ export default function Chart({
     })
 
     // ── Bollinger Bands（主要價格軸，覆蓋在 K 棒上）──
-    const bbOpts = { lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false }
-    S.current.series.bbUpper  = chart.addLineSeries({ ...bbOpts, color:'#5a8ec899', lineStyle:1 })
-    S.current.series.bbMiddle = chart.addLineSeries({ ...bbOpts, color:'#5a8ec855', lineStyle:1 })
-    S.current.series.bbLower  = chart.addLineSeries({ ...bbOpts, color:'#5a8ec899', lineStyle:1 })
+    const bbOpts = { lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false }
+    S.current.series.bbUpper  = chart.addLineSeries({ ...bbOpts, color:'#4a7ac8cc' })   // 實線，上軌
+    S.current.series.bbMiddle = chart.addLineSeries({ ...bbOpts, color:'#4a7ac877', lineStyle:2 }) // 虛線，中軌
+    S.current.series.bbLower  = chart.addLineSeries({ ...bbOpts, color:'#4a7ac8cc' })   // 實線，下軌
 
     // ── 成交量 MA5（'vol' 價格軸）──
     S.current.series.volMA = chart.addLineSeries({
