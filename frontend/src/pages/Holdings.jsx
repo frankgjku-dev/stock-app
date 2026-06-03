@@ -253,8 +253,12 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
                 const stopDanger = r.distToStop != null && r.distToStop < 2
                 return (
                   <tr key={r.id} className={stopDanger ? 'hd-danger' : stopWarn ? 'hd-warn' : ''}>
-                    <td>
-                      <div className="hd-sym">{r.symbol}</div>
+                    <td
+                      onClick={() => onSelectStock(r.symbol)}
+                      style={{ cursor: 'pointer' }}
+                      title="點擊查看 K 線"
+                    >
+                      <div className="hd-sym" style={{ color: 'var(--accent)' }}>{r.symbol}</div>
                       <div className="hd-name">{r.name || '—'}</div>
                     </td>
                     <td>{r.entryDate}</td>

@@ -1146,6 +1146,10 @@ body {
 }
 
 .wl-group { border-bottom: 1px solid var(--border); }
+.wl-holdings-group {
+  background: var(--accent-dim);
+  border-bottom: 2px solid var(--border-hi);
+}
 
 .wl-group-hd {
   display: flex; align-items: center; gap: 5px;

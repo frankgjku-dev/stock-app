@@ -453,6 +453,7 @@ export default function App() {
             onSelectSymbol={setSymbol} onToggleInGroup={toggleInGroup}
             onAddGroup={addGroup} onDeleteGroup={deleteGroup} onRenameGroup={renameGroup}
             onReorderStock={reorderStock}
+            activeHoldings={holdings.filter(h => h.status !== 'sold')}
           />
         </div>
       )}

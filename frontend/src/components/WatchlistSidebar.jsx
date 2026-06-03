@@ -5,7 +5,8 @@ export default function WatchlistSidebar({
   watchlist, currentSymbol,
   onSelectSymbol, onToggleInGroup,
   onAddGroup, onDeleteGroup, onRenameGroup,
-  onReorderStock,   // (groupId, fromIdx, toIdx)
+  onReorderStock,       // (groupId, fromIdx, toIdx)
+  activeHoldings = [],  // 未賣出的持倉，自動顯示為「持有股」區段
 }) {
   const [collapsed,    setCollapsed]    = useState({})
   const [addingGroup,  setAddingGroup]  = useState(false)
@@ -97,10 +98,45 @@ export default function WatchlistSidebar({
         </div>
       )}
 
+      {/* ── 持有股（自動同步，唯讀）── */}
+      {activeHoldings.length > 0 && (
+        <div className="wl-group wl-holdings-group">
+          <div className="wl-group-hd" onClick={() => toggleCollapse('__holdings__')}>
+            <span className="wl-arrow">{collapsed['__holdings__'] ? '▶' : '▼'}</span>
+            <span className="wl-group-name">📌 持有股</span>
+            <span className="wl-count">{activeHoldings.length}</span>
+          </div>
+          {!collapsed['__holdings__'] && (
+            <div className="wl-stocks">
+              {activeHoldings.map(h => (
+                <div
+                  key={h.id ?? h.symbol}
+                  className={`wl-row${h.symbol === currentSymbol ? ' current' : ''}`}
+                  onClick={() => onSelectSymbol(h.symbol)}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                    <span className="wl-sym">{h.symbol}</span>
+                    {(h.name || nameMap[h.symbol]) && (
+                      <span style={{
+                        fontSize: 11, color: 'var(--text-3)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{h.name || nameMap[h.symbol]}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Groups */}
       <div className="wl-groups">
-        {watchlist.groups.length === 0 && (
+        {watchlist.groups.length === 0 && activeHoldings.length === 0 && (
           <div className="wl-hint">點擊 ＋ 新增分類</div>
+        )}
+        {watchlist.groups.length === 0 && activeHoldings.length > 0 && (
+          <div className="wl-hint">點擊 ＋ 新增自選分類</div>
         )}
 
         {watchlist.groups.map(group => (
