@@ -220,6 +220,13 @@ export default function App() {
     setInterval(iv); setPeriod(p)
   }, [])
 
+  // 切換股票：重置為日線 1y（避免帶著前一個股票的 interval/period 設定）
+  const switchStock = useCallback((sym) => {
+    setSymbol(sym)
+    setInterval('1d')
+    setPeriod('1y')
+  }, [])
+
   // 從回測交易紀錄跳到 K 線圖並標記買賣點
   const handleViewTrade = useCallback((sym, trade) => {
     // 計算需要多長的 period 才能包含買入日
@@ -363,7 +370,7 @@ export default function App() {
       {tab === 'chart' ? (
         <TopBar
           symbol={symbol} quote={quote} interval={interval} period={period}
-          onSymbolChange={setSymbol} onIntervalChange={handleIntervalChange}
+          onSymbolChange={switchStock} onIntervalChange={handleIntervalChange}
           watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
         />
       ) : (
@@ -466,7 +473,7 @@ export default function App() {
           </div>
           <WatchlistSidebar
             watchlist={watchlist} currentSymbol={symbol}
-            onSelectSymbol={setSymbol} onToggleInGroup={toggleInGroup}
+            onSelectSymbol={switchStock} onToggleInGroup={toggleInGroup}
             onAddGroup={addGroup} onDeleteGroup={deleteGroup} onRenameGroup={renameGroup}
             onReorderStock={reorderStock}
             activeHoldings={holdings.filter(h => h.status !== 'sold')}
@@ -476,12 +483,12 @@ export default function App() {
 
       {tab === 'screener' && (
         <Screener
-          onSelectStock={(s) => { setSymbol(s); setTab('chart') }}
+          onSelectStock={(s) => { switchStock(s); setTab('chart') }}
           watchlist={watchlist} onToggleInGroup={toggleInGroup}
         />
       )}
       {tab === 'intel'      && (
-        <MarketIntel onSelectStock={(s) => { setSymbol(s); setTab('chart') }} />
+        <MarketIntel onSelectStock={(s) => { switchStock(s); setTab('chart') }} />
       )}
       {tab === 'backtest'   && <Backtest symbol={symbol} onViewTrade={handleViewTrade} />}
       {tab === 'calculator' && (
@@ -489,7 +496,7 @@ export default function App() {
       )}
       {tab === 'holdings' && (
         <Holdings holdings={holdings} onRemove={removeHolding} onUpdate={updateHolding}
-          onSelectStock={(s) => { setSymbol(s); setTab('chart') }} />
+          onSelectStock={(s) => { switchStock(s); setTab('chart') }} />
       )}
       {tab === 'journal' && (
         <Journal
@@ -510,7 +517,7 @@ export default function App() {
       {tab === 'analysis' && (
         <StockAnalysis
           currentSymbol={symbol}
-          onSelectStock={(s) => { setSymbol(s); setInterval('1d'); setPeriod('1y'); setTab('chart') }}
+          onSelectStock={(s) => { switchStock(s); setTab('chart') }}
         />
       )}
 
