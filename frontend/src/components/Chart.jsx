@@ -238,13 +238,14 @@ export default function Chart({
     const T = 9
     if (type === 'horizontal') return Math.abs(my - p1.y) < T
     if (type === 'vertical')   return Math.abs(mx - p1.x) < T
-    // 文字：點中背景框或錨點
+    // 文字框：bounding box（同矩形）
     if (type === 'text') {
-      if (Math.hypot(mx - p1.x, my - p1.y) < 8) return true
-      const tw = (d.text?.length ?? 0) * 7.5 + 16   // 估算寬度
-      const bh = 22
-      return mx >= p1.x - tw / 2 && mx <= p1.x + tw / 2 &&
-             my >= p1.y - bh - 4  && my <= p1.y - 4
+      if (!pts[1]) return Math.hypot(mx - p1.x, my - p1.y) < 12
+      const p2t = toPixel(pts[1])
+      if (!p2t) return false
+      const [lx,rx] = [Math.min(p1.x,p2t.x), Math.max(p1.x,p2t.x)]
+      const [ty,by] = [Math.min(p1.y,p2t.y), Math.max(p1.y,p2t.y)]
+      return mx>=lx && mx<=rx && my>=ty && my<=by
     }
     if (!pts[1]) return false
     const p2 = toPixel(pts[1])
@@ -480,24 +481,40 @@ export default function Chart({
           break
         }
         case 'text': {
-          if (!d.text) break
+          if (!p2) break
+          const txt = d.text || ''
           ctx.save()
-          ctx.setLineDash([])
-          ctx.font = `bold 12px Inter, system-ui, sans-serif`
-          const tw   = ctx.measureText(d.text).width
-          const pad  = 8, bh = 22
-          const bx   = p1.x - tw / 2 - pad
-          const by   = p1.y - bh - 4
-          ctx.fillStyle = selected ? lighten(color) + 'dd' : color + 'cc'
-          if (ctx.roundRect) ctx.roundRect(bx, by, tw + pad * 2, bh, 4)
-          else ctx.rect(bx, by, tw + pad * 2, bh)
+          ctx.setLineDash(isPreview ? [5, 3] : [])
+          const bx2 = Math.min(p1.x, p2.x), by2 = Math.min(p1.y, p2.y)
+          const bw2 = Math.abs(p2.x - p1.x), bh3 = Math.abs(p2.y - p1.y)
+          // 半透明背景
+          ctx.fillStyle = color + (selected ? '30' : '18')
+          if (ctx.roundRect) ctx.roundRect(bx2, by2, bw2, bh3, 4)
+          else ctx.rect(bx2, by2, bw2, bh3)
           ctx.fill()
-          ctx.fillStyle = '#fff'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(d.text, p1.x, by + bh / 2)
-          ctx.fillStyle = selected ? lighten(color) : color
-          ctx.beginPath(); ctx.arc(p1.x, p1.y, selected ? 4 : 2.5, 0, Math.PI * 2); ctx.fill()
+          // 邊框
+          ctx.strokeStyle = selected ? lighten(color) : color
+          ctx.lineWidth   = selected ? 2 : 1.5
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(bx2, by2, bw2, bh3, 4)
+          else ctx.rect(bx2, by2, bw2, bh3)
+          ctx.stroke()
+          // 文字居中（自動縮字）
+          if (txt && bw2 > 8 && bh3 > 8) {
+            ctx.setLineDash([])
+            const maxW = bw2 - 8
+            let   fs   = Math.min(14, bh3 - 8)
+            if (fs >= 7) {
+              ctx.font = `600 ${fs}px Inter, system-ui, sans-serif`
+              while (ctx.measureText(txt).width > maxW && fs > 7) {
+                fs--; ctx.font = `600 ${fs}px Inter, system-ui, sans-serif`
+              }
+              ctx.fillStyle    = selected ? lighten(color) : color
+              ctx.textAlign    = 'center'
+              ctx.textBaseline = 'middle'
+              ctx.fillText(txt, bx2 + bw2 / 2, by2 + bh3 / 2, maxW)
+            }
+          }
           ctx.restore()
           break
         }
@@ -812,15 +829,6 @@ export default function Chart({
       }
 
       const color = drawColorRef.current
-      // 文字工具：一點即放置
-      if (tool === 'text') {
-        const txt = labelTextRef.current.trim()
-        if (!txt) return
-        S.current.drawings.push({ type: 'text', pts: [dp], color, text: txt })
-        onDrawingsChangeRef.current?.(S.current.drawings)
-        redraw()
-        return
-      }
       const oneClick = tool === 'horizontal' || tool === 'vertical'
 
       if (!S.current.preview) {
@@ -828,11 +836,17 @@ export default function Chart({
           S.current.drawings.push({ type: tool, pts: [dp], color })
           onDrawingsChangeRef.current?.(S.current.drawings)
         } else {
-          S.current.preview = { type: tool, pts: [dp], color, cursor: cursorForPreview }
+          // 文字工具：第一點記錄文字內容
+          const extra = tool === 'text'
+            ? { text: labelTextRef.current.trim() || '文字' }
+            : {}
+          S.current.preview = { type: tool, pts: [dp], color, cursor: cursorForPreview, ...extra }
         }
       } else {
         const prev = S.current.preview
-        S.current.drawings.push({ type: prev.type, pts: [...prev.pts, dp], color: prev.color })
+        // 文字工具：第二點完成文字框（需帶入 text）
+        const extra = prev.text != null ? { text: prev.text } : {}
+        S.current.drawings.push({ type: prev.type, pts: [...prev.pts, dp], color: prev.color, ...extra })
         S.current.preview = null
         onDrawingsChangeRef.current?.(S.current.drawings)
       }
