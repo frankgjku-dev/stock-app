@@ -844,9 +844,25 @@ export default function Chart({
       }, { once: true })
     }
 
-    let _wasDragging  = false   // 拖拉結束後防止 subscribeClick 誤清選取
-    let _lastClickTime = 0
-    let _lastClickIdx  = -1
+    // 把 openTextEditor 掛到 S.current，讓 keydown useEffect 也能呼叫
+    S.current.openTextEditor = openTextEditor
+
+    let _wasDragging = false   // 拖拉結束後防止 subscribeClick 誤清選取
+
+    // ── 原生 dblclick：雙擊文字框重新編輯（比 subscribeClick 更可靠）──
+    function onCtDblClick(e) {
+      if (activeToolRef.current !== 'cursor') return
+      const rect = ct.getBoundingClientRect()
+      const x = e.clientX - rect.left, y = e.clientY - rect.top
+      for (let i = S.current.drawings.length - 1; i >= 0; i--) {
+        if (S.current.drawings[i].type === 'text' && hitTest(S.current.drawings[i], x, y)) {
+          S.current.selectedIdx = i
+          openTextEditor(i)
+          return
+        }
+      }
+    }
+    ct.addEventListener('dblclick', onCtDblClick, true)
 
     chart.subscribeClick(param => {
       if (_justClosed) { _justClosed = false; return }   // 剛關閉編輯，忽略此次 click
@@ -859,18 +875,6 @@ export default function Chart({
           let hit = -1
           for (let i = S.current.drawings.length - 1; i >= 0; i--) {
             if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
-          }
-          // 雙擊文字框 → 開啟 inline 編輯
-          const now = Date.now()
-          if (hit >= 0 && S.current.drawings[hit]?.type === 'text') {
-            if (now - _lastClickTime < 400 && _lastClickIdx === hit) {
-              openTextEditor(hit)
-              _lastClickTime = 0; _lastClickIdx = -1
-              S.current.selectedIdx = hit; redraw(); return
-            }
-            _lastClickTime = now; _lastClickIdx = hit
-          } else {
-            _lastClickTime = 0; _lastClickIdx = -1
           }
           S.current.selectedIdx = hit
           redraw()
@@ -1182,6 +1186,7 @@ export default function Chart({
       ct.removeEventListener('mousedown', onArcMouseDown, true)
       ct.removeEventListener('mousemove', onArcMouseMove, true)
       ct.removeEventListener('mouseup',   onArcMouseUp,   true)
+      ct.removeEventListener('dblclick',   onCtDblClick,    true)
       ct.removeEventListener('mousedown', onMoveMouseDown, true)
       ct.removeEventListener('mousemove', onMoveMouseMove, true)
       ct.removeEventListener('mouseup',   onMoveMouseUp,   true)
@@ -1308,6 +1313,15 @@ export default function Chart({
         }
         S.current.redraw?.()
         return
+      }
+
+      // Enter：選取中的文字框 → 開啟 inline 編輯
+      if (e.key === 'Enter') {
+        const { selectedIdx, drawings } = S.current
+        if (selectedIdx >= 0 && drawings[selectedIdx]?.type === 'text') {
+          S.current.openTextEditor?.(selectedIdx)
+          return
+        }
       }
 
       if (e.key === 'Escape') {
