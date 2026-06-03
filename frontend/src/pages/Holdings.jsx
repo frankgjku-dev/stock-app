@@ -401,12 +401,12 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
             }}
             onClick={() => setShowSold(v => !v)}
           >
-            <span style={{ fontSize: 15, fontWeight: 700, color: '#e0e3eb' }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>
               ✅ 已完成交易
             </span>
             <span style={{
-              background: '#26a69a22', color: '#26a69a',
-              borderRadius: 10, fontSize: 12, padding: '1px 8px',
+              background: 'var(--down-dim)', color: 'var(--down)',
+              borderRadius: 10, fontSize: 12, padding: '1px 8px', fontWeight: 600,
             }}>{soldRows.length} 筆</span>
             <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 13 }}>
               {showSold ? '▲ 收起' : '▼ 展開'}
