@@ -779,8 +779,77 @@ export default function Chart({
     })
 
     // 點擊 → 畫線
-    let _wasDragging = false   // 拖拉結束後防止 subscribeClick 誤清選取
+    // ── Inline 文字框編輯 ──────────────────────────────────────────
+    let _textTA     = null   // 當前 textarea DOM 節點
+    let _textTAIdx  = -1     // 正在編輯的 drawing index
+    let _justClosed = false  // 關閉編輯後阻擋下一個 click
+
+    function openTextEditor(idx) {
+      if (_textTA) closeTextEditor(false)
+      const d = S.current.drawings[idx]
+      if (!d || d.type !== 'text' || !d.pts[0] || !d.pts[1]) return
+      const p1 = toPixel(d.pts[0]), p2 = toPixel(d.pts[1])
+      if (!p1 || !p2) return
+      const rect = ct.getBoundingClientRect()
+      const bx = Math.min(p1.x, p2.x), by_ = Math.min(p1.y, p2.y)
+      const bw = Math.abs(p2.x - p1.x), bh_ = Math.abs(p2.y - p1.y)
+      _textTAIdx = idx
+      const ta = document.createElement('textarea')
+      ta.value = d.text ?? ''
+      ta.placeholder = '輸入文字…'
+      Object.assign(ta.style, {
+        position: 'fixed',
+        left: `${rect.left + bx + 2}px`,
+        top:  `${rect.top  + by_ + 2}px`,
+        width:  `${Math.max(bw - 4, 30)}px`,
+        height: `${Math.max(bh_ - 4, 16)}px`,
+        background: 'transparent',
+        border: 'none',
+        outline: 'none',
+        resize: 'none',
+        font: '600 12px Inter,system-ui,sans-serif',
+        color: d.color || '#b86e2a',
+        textAlign: 'center',
+        overflow: 'hidden',
+        zIndex: '10000',
+        padding: '2px 4px',
+        lineHeight: '1.4',
+      })
+      _textTA = ta
+      document.body.appendChild(ta)
+      ta.focus(); ta.select()
+
+      function commitText() {
+        if (!_textTA || _textTAIdx < 0) return
+        const val = _textTA.value
+        S.current.drawings[_textTAIdx] = { ...S.current.drawings[_textTAIdx], text: val }
+        onDrawingsChangeRef.current?.(S.current.drawings)
+        closeTextEditor(true)
+      }
+      function closeTextEditor(doRedraw) {
+        if (_textTA) { document.body.removeChild(_textTA); _textTA = null }
+        _textTAIdx = -1; _justClosed = true
+        if (doRedraw) redraw()
+      }
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText() }
+        if (e.key === 'Escape') closeTextEditor(true)
+        e.stopPropagation()
+      }, true)
+      ta.addEventListener('blur', () => setTimeout(commitText, 150))
+      // 停用圖表 pan 避免誤觸
+      chart.applyOptions({ handleScroll: { pressedMouseMove: false, mouseWheel: true, horzTouchDrag: false } })
+      ta.addEventListener('blur', () => {
+        chart.applyOptions({ handleScroll: { pressedMouseMove: true, mouseWheel: true, horzTouchDrag: true } })
+      }, { once: true })
+    }
+
+    let _wasDragging  = false   // 拖拉結束後防止 subscribeClick 誤清選取
+    let _lastClickTime = 0
+    let _lastClickIdx  = -1
+
     chart.subscribeClick(param => {
+      if (_justClosed) { _justClosed = false; return }   // 剛關閉編輯，忽略此次 click
       const tool = activeToolRef.current
 
       if (tool === 'cursor') {
@@ -790,6 +859,18 @@ export default function Chart({
           let hit = -1
           for (let i = S.current.drawings.length - 1; i >= 0; i--) {
             if (hitTest(S.current.drawings[i], x, y)) { hit = i; break }
+          }
+          // 雙擊文字框 → 開啟 inline 編輯
+          const now = Date.now()
+          if (hit >= 0 && S.current.drawings[hit]?.type === 'text') {
+            if (now - _lastClickTime < 400 && _lastClickIdx === hit) {
+              openTextEditor(hit)
+              _lastClickTime = 0; _lastClickIdx = -1
+              S.current.selectedIdx = hit; redraw(); return
+            }
+            _lastClickTime = now; _lastClickIdx = hit
+          } else {
+            _lastClickTime = 0; _lastClickIdx = -1
           }
           S.current.selectedIdx = hit
           redraw()
@@ -836,19 +917,20 @@ export default function Chart({
           S.current.drawings.push({ type: tool, pts: [dp], color })
           onDrawingsChangeRef.current?.(S.current.drawings)
         } else {
-          // 文字工具：第一點記錄文字內容
-          const extra = tool === 'text'
-            ? { text: labelTextRef.current.trim() || '文字' }
-            : {}
-          S.current.preview = { type: tool, pts: [dp], color, cursor: cursorForPreview, ...extra }
+          S.current.preview = { type: tool, pts: [dp], color, cursor: cursorForPreview }
         }
       } else {
         const prev = S.current.preview
-        // 文字工具：第二點完成文字框（需帶入 text）
-        const extra = prev.text != null ? { text: prev.text } : {}
-        S.current.drawings.push({ type: prev.type, pts: [...prev.pts, dp], color: prev.color, ...extra })
+        S.current.drawings.push({ type: prev.type, pts: [...prev.pts, dp], color: prev.color, text: '' })
         S.current.preview = null
         onDrawingsChangeRef.current?.(S.current.drawings)
+        redraw()
+        // 文字框：完成後立即開啟 inline 編輯
+        if (prev.type === 'text') {
+          const newIdx = S.current.drawings.length - 1
+          requestAnimationFrame(() => openTextEditor(newIdx))
+        }
+        return
       }
       redraw()
     })
@@ -1103,6 +1185,7 @@ export default function Chart({
       ct.removeEventListener('mousedown', onMoveMouseDown, true)
       ct.removeEventListener('mousemove', onMoveMouseMove, true)
       ct.removeEventListener('mouseup',   onMoveMouseUp,   true)
+      if (_textTA && document.body.contains(_textTA)) document.body.removeChild(_textTA)
       chart.remove()
       document.body.removeChild(canvas)
       if (ct.contains(legend)) ct.removeChild(legend)
