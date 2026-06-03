@@ -8,17 +8,19 @@ const METHOD_INFO = [
   { label: '漸進式建倉',              desc: '第1筆獲利→才加第2筆→逐步放大' },
 ]
 
-// ── Field 必須定義在元件外部，否則每次 render 都會重新建立函式
-// → React 視為全新元件 → input 被卸載/重建 → 焦點丟失
-function Field({ label, value, onChange, prefix='', suffix='', hint='' }) {
+function Field({ label, value, onChange, prefix='', suffix='', hint='', placeholder='', optional=false }) {
   return (
     <div className="calc-field">
-      <label className="calc-label">{label}</label>
+      <label className="calc-label">
+        {label}
+        {optional && <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 6 }}>（選填）</span>}
+      </label>
       {hint && <span className="calc-hint">{hint}</span>}
       <div className="calc-input-wrap">
         {prefix && <span className="calc-affix">{prefix}</span>}
         <input className="calc-input" type="number"
-          value={value} onChange={e => onChange(e.target.value)} />
+          value={value} onChange={e => onChange(e.target.value)}
+          placeholder={placeholder} />
         {suffix && <span className="calc-affix">{suffix}</span>}
       </div>
     </div>
@@ -28,13 +30,13 @@ function Field({ label, value, onChange, prefix='', suffix='', hint='' }) {
 export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
   const [symbol,    setSymbol]    = useState('')
   const [name,      setName]      = useState('')
-  const [account,   setAccount]   = useState(500000)
+  const [account,   setAccount]   = useState('')       // 選填，預設空白
   const [riskPct,   setRiskPct]   = useState(1.5)
   const [entry,     setEntry]     = useState('')
-  const [stopPctIn, setStopPctIn] = useState('')   // 停損 % (e.g. 7 → 7%)
-  const [targetR,   setTargetR]   = useState('')   // 目標 R 倍數 (e.g. 2 → 2R)
-  const [showMethod, setShowMethod] = useState(false)  // 預設收起，避免佔掉太多畫面
-  const [added,     setAdded]     = useState(false)  // flash after adding
+  const [stopPctIn, setStopPctIn] = useState('')
+  const [targetR,   setTargetR]   = useState('')
+  const [showMethod, setShowMethod] = useState(false)
+  const [added,     setAdded]     = useState(false)
 
   useEffect(() => {
     const sym = symbol.trim()
@@ -49,7 +51,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
   }, [symbol])
 
   function handleAddHolding() {
-    if (!calc || !symbol.trim() || calc.lots === 0) return
+    if (!calc || !symbol.trim() || calc.lots == null || calc.lots === 0) return
     onAddHolding({
       symbol:     symbol.trim(),
       name:       name || symbol.trim(),
@@ -68,46 +70,54 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
 
   const calc = useMemo(() => {
     const e   = parseFloat(entry)
-    const sp  = parseFloat(stopPctIn)           // 停損 %
-    const tr  = parseFloat(targetR) || null     // 目標 R 倍
-    const acc = parseFloat(account)
+    const sp  = parseFloat(stopPctIn)
+    const tr  = parseFloat(targetR) || null
+    const acc = parseFloat(account) || null    // 選填：空白 → null
     const rp  = parseFloat(riskPct) / 100
-    if (!e || !sp || !acc || !rp || e <= 0 || sp <= 0 || sp >= 100) return null
 
-    const stopPrice  = e * (1 - sp / 100)                     // 停損實際價格
-    const targetPrice = tr && tr > 0 ? e + (e - stopPrice) * tr : null  // 目標實際價格
+    if (!e || !sp || e <= 0 || sp <= 0 || sp >= 100) return null
 
-    const dollarRisk    = acc * rp
-    const stopDist      = e - stopPrice
-    const rawShares     = dollarRisk / stopDist
-    const lots          = Math.floor(rawShares / 1000)
-    const shares        = lots * 1000
-    const sharesOdd     = Math.floor(rawShares)
-    const positionVal   = shares * e
-    const positionPct   = shares > 0 ? positionVal / acc * 100 : 0
-    const actualRisk    = shares * stopDist
-    const actualRiskPct = shares > 0 ? actualRisk / acc * 100 : 0
-    const rr            = targetPrice ? tr : null
-    const targetProfit  = rr != null ? shares * (targetPrice - e) : null
+    const stopPrice   = e * (1 - sp / 100)
+    const stopDist    = e - stopPrice
+    const targetPrice = tr && tr > 0 ? e + stopDist * tr : null
+
+    // ── 帳戶相關計算（選填，無則 null）──
+    let lots = null, shares = null, sharesOdd = null
+    let positionVal = null, positionPct = null
+    let actualRisk = null, actualRiskPct = null
+    let targetProfit = null
+
+    if (acc && acc > 0 && rp > 0) {
+      const rawShares = (acc * rp) / stopDist
+      lots          = Math.floor(rawShares / 1000)
+      shares        = lots * 1000
+      sharesOdd     = Math.floor(rawShares)
+      positionVal   = shares * e
+      positionPct   = shares > 0 ? positionVal / acc * 100 : 0
+      actualRisk    = shares * stopDist
+      actualRiskPct = shares > 0 ? actualRisk / acc * 100 : 0
+      targetProfit  = tr != null && targetPrice != null ? shares * (targetPrice - e) : null
+    }
+
     return {
+      hasAccount: acc != null && acc > 0,
+      acc,
       shares, lots, sharesOdd,
-      stopPrice, targetPrice,
+      stopPrice, stopDist, stopPct: sp,
+      targetPrice,
       positionVal, positionPct,
-      stopDist, stopPct: sp,
-      actualRisk, actualRiskPct, rr, targetProfit,
+      actualRisk, actualRiskPct,
+      rr: targetPrice ? tr : null, targetProfit,
     }
   }, [account, riskPct, entry, stopPctIn, targetR])
 
-  // Progressive Exposure 漸進式建倉
+  // 漸進式建倉（需要帳戶資金）
   const progressive = useMemo(() => {
-    if (!calc) return null
-    const acc = parseFloat(account)
-    const e   = parseFloat(entry)
-    if (!acc || !e || e <= 0) return null
-    // 以「張」為單位計算，避免小數乘法造成 0
-    const totalLots = Math.floor(acc * 0.20 / e / 1000)
-    if (totalLots === 0) return null   // 帳戶買不起 1 張，不顯示漸進表
-
+    if (!calc?.hasAccount) return null
+    const e = parseFloat(entry)
+    if (!e || e <= 0) return null
+    const totalLots = Math.floor(calc.acc * 0.20 / e / 1000)
+    if (totalLots === 0) return null
     const labels     = ['初倉 25%', '加倉至 50%', '加倉至 75%', '滿倉 100%']
     const conditions = [
       '直接進場（Pivot 突破放量）',
@@ -117,15 +127,9 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
     ]
     return [0.25, 0.50, 0.75, 1.00].map((pct, i) => {
       const stageLots = Math.max(1, Math.round(totalLots * pct))
-      return {
-        stage:     i + 1,
-        label:     labels[i],
-        lots:      stageLots,
-        shares:    stageLots * 1000,
-        condition: conditions[i],
-      }
+      return { stage: i+1, label: labels[i], lots: stageLots, shares: stageLots*1000, condition: conditions[i] }
     })
-  }, [calc, account, entry])
+  }, [calc, entry])
 
   return (
     <div className="calc-page">
@@ -145,11 +149,25 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
             </div>
             {name && <div className="calc-computed">→ {name}</div>}
           </div>
-          <Field label="帳戶資金"             value={account}   onChange={setAccount}   prefix="NT$" />
-          <Field label="單筆風險上限"          value={riskPct}   onChange={setRiskPct}   suffix="%" hint="建議 1.25%–2.5%" />
-          <Field label="進場價（Pivot Point）" value={entry}     onChange={setEntry}     prefix="$" />
 
-          {/* 停損：輸入 %，自動換算成價格 */}
+          {/* 帳戶資金：選填 */}
+          <Field
+            label="帳戶資金" optional
+            value={account} onChange={setAccount}
+            prefix="NT$" placeholder="例：500000"
+            hint="填入後可計算張數與風險金額"
+          />
+
+          {/* 單筆風險（無帳戶時灰色但仍可填）*/}
+          <Field
+            label="單筆風險上限"
+            value={riskPct} onChange={setRiskPct}
+            suffix="%" hint="建議 1.25%–2.5%"
+          />
+
+          <Field label="進場價（Pivot Point）" value={entry} onChange={setEntry} prefix="$" />
+
+          {/* 停損 */}
           <div className="calc-field">
             <label className="calc-label">
               停損幅度
@@ -170,7 +188,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
             {calc && <div className="calc-computed">→ 停損價 ${calc.stopPrice.toFixed(2)}</div>}
           </div>
 
-          {/* 目標：輸入 R 倍數，自動換算成價格 */}
+          {/* 目標 */}
           <div className="calc-field">
             <label className="calc-label">目標損益比（選填）</label>
             <span className="calc-hint">建議 ≥ 2R</span>
@@ -180,7 +198,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
                 min={0.5} max={20} step={0.5} placeholder="例：2" />
               <span className="calc-affix">R</span>
             </div>
-            {calc && calc.targetPrice && <div className="calc-computed">→ 目標價 ${calc.targetPrice.toFixed(2)}</div>}
+            {calc?.targetPrice && <div className="calc-computed">→ 目標價 ${calc.targetPrice.toFixed(2)}</div>}
           </div>
         </div>
 
@@ -197,44 +215,77 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
           )}
           {calc && (
             <>
-              <div className="result-card primary">
-                <div className="result-label">應買張數</div>
-                {calc.lots > 0 ? (
-                  <>
-                    <div className="result-val">{calc.lots} 張</div>
-                    <div className="result-sub">{calc.shares.toLocaleString()} 股</div>
-                  </>
-                ) : (
-                  <>
-                    <div className="result-val" style={{ color: '#e0a800', fontSize: 18 }}>不足 1 張</div>
-                    <div className="result-sub">零股可買 {calc.sharesOdd.toLocaleString()} 股</div>
-                  </>
-                )}
-              </div>
-              <div className="result-card">
-                <div className="result-label">部位金額</div>
-                <div className="result-val">
-                  NT${calc.positionVal.toLocaleString(undefined,{maximumFractionDigits:0})}
+              {/* 張數（需要帳戶）*/}
+              {calc.hasAccount ? (
+                <div className="result-card primary">
+                  <div className="result-label">應買張數</div>
+                  {calc.lots > 0 ? (
+                    <>
+                      <div className="result-val">{calc.lots} 張</div>
+                      <div className="result-sub">{calc.shares.toLocaleString()} 股</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="result-val" style={{ color: '#e0a800', fontSize: 18 }}>不足 1 張</div>
+                      <div className="result-sub">零股可買 {calc.sharesOdd.toLocaleString()} 股</div>
+                    </>
+                  )}
                 </div>
-                <div className="result-sub">佔帳戶 {calc.positionPct.toFixed(1)}%</div>
-              </div>
+              ) : (
+                <div className="result-card" style={{ opacity: 0.55 }}>
+                  <div className="result-label">應買張數</div>
+                  <div className="result-val" style={{ fontSize: 14, color: 'var(--text-3)' }}>填入帳戶資金後計算</div>
+                </div>
+              )}
+
+              {/* 部位金額（需要帳戶）*/}
+              {calc.hasAccount && (
+                <div className="result-card">
+                  <div className="result-label">部位金額</div>
+                  <div className="result-val">
+                    NT${calc.positionVal.toLocaleString(undefined,{maximumFractionDigits:0})}
+                  </div>
+                  <div className="result-sub">佔帳戶 {calc.positionPct.toFixed(1)}%</div>
+                </div>
+              )}
+
+              {/* 停損距離（不需帳戶）*/}
               <div className="result-card danger">
-                <div className="result-label">實際風險金額</div>
-                <div className="result-val">
-                  NT${calc.actualRisk.toLocaleString(undefined,{maximumFractionDigits:0})}
+                <div className="result-label">
+                  {calc.hasAccount ? '實際風險金額' : '每股停損距離'}
                 </div>
-                <div className="result-sub">佔帳戶 {calc.actualRiskPct.toFixed(2)}%</div>
+                <div className="result-val">
+                  {calc.hasAccount
+                    ? `NT$${calc.actualRisk.toLocaleString(undefined,{maximumFractionDigits:0})}`
+                    : `$${calc.stopDist.toFixed(2)}`
+                  }
+                </div>
+                <div className="result-sub">
+                  {calc.hasAccount
+                    ? `佔帳戶 ${calc.actualRiskPct.toFixed(2)}%`
+                    : `停損 ${calc.stopPct.toFixed(1)}%`
+                  }
+                </div>
               </div>
+
+              {/* 停損資訊（不需帳戶）*/}
               <div className="result-card">
                 <div className="result-label">停損幅度</div>
                 <div className="result-val">{calc.stopPct.toFixed(1)}%</div>
                 <div className="result-sub">每股 ${calc.stopDist.toFixed(2)}　停損價 ${calc.stopPrice.toFixed(2)}</div>
               </div>
+
+              {/* 目標（不需帳戶）*/}
               {calc.rr != null && (
                 <div className="result-card success">
-                  <div className="result-label">目標獲利 / 損益比</div>
+                  <div className="result-label">
+                    {calc.hasAccount ? '目標獲利 / 損益比' : '目標損益比'}
+                  </div>
                   <div className="result-val">
-                    NT${calc.targetProfit?.toLocaleString(undefined,{maximumFractionDigits:0})}
+                    {calc.hasAccount && calc.targetProfit != null
+                      ? `NT$${calc.targetProfit.toLocaleString(undefined,{maximumFractionDigits:0})}`
+                      : `${calc.rr.toFixed(1)}R`
+                    }
                   </div>
                   <div className="result-sub">
                     {calc.rr.toFixed(1)}R:1　目標價 ${calc.targetPrice?.toFixed(2)}
@@ -248,22 +299,23 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
               {/* 紀律提醒 */}
               <div className="discipline-box">
                 <div className="disc-title">紀律提醒</div>
-                {calc.lots === 0 &&
+                {calc.hasAccount && calc.lots === 0 &&
                   <div className="disc-warn">⚠️ 風險計算所得股數不足 1 張，考慮以零股（{calc.sharesOdd} 股）操作或擴大資金</div>}
                 {calc.stopPct > 8 &&
                   <div className="disc-warn">⚠️ 停損超過 8%，Minervini 建議最大 7–8%</div>}
-                {calc.lots > 0 && calc.actualRiskPct > 2.5 &&
+                {calc.hasAccount && calc.lots > 0 && calc.actualRiskPct > 2.5 &&
                   <div className="disc-warn">⚠️ 風險超過 2.5%，請縮小部位</div>}
-                {calc.positionPct > 30 &&
+                {calc.hasAccount && calc.positionPct > 30 &&
                   <div className="disc-warn">⚠️ 單一持股超過 30%，留意集中風險</div>}
-                {calc.lots > 0 && calc.stopPct <= 8 && calc.actualRiskPct <= 2.5 &&
-                  <div className="disc-ok">✅ 風險控制在合理範圍</div>}
+                {(!calc.hasAccount || (calc.lots > 0 && calc.stopPct <= 8 && calc.actualRiskPct <= 2.5)) &&
+                  calc.stopPct <= 8 &&
+                  <div className="disc-ok">✅ 停損在合理範圍</div>}
                 {calc.rr != null && calc.rr < 2 &&
                   <div className="disc-warn">⚠️ 損益比低於 2:1，建議調整目標或進場點</div>}
               </div>
 
-              {/* 加入持倉 */}
-              {symbol.trim() && calc.lots > 0 && (
+              {/* 加入持倉（需有帳戶 + 張數）*/}
+              {symbol.trim() && calc.hasAccount && calc.lots > 0 && (
                 <div style={{ marginTop: 8 }}>
                   {added ? (
                     <div className="hd-added-flash">✅ 已加入持倉！
@@ -281,7 +333,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
         </div>
       </div>
 
-      {/* 漸進式建倉 */}
+      {/* 漸進式建倉（需帳戶）*/}
       {progressive && (
         <div className="progressive-section">
           <h3 className="prog-title">漸進式建倉計畫（Progressive Exposure）</h3>
@@ -299,7 +351,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
         </div>
       )}
 
-      {/* ── 方法說明（移至最底，不阻擋輸入欄）── */}
+      {/* 方法說明 */}
       <div className="method-card">
         <div className="method-header" onClick={() => setShowMethod(p => !p)}>
           <span className="method-title">📋 計算方式說明</span>
