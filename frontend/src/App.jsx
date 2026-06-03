@@ -446,6 +446,7 @@ export default function App() {
                 savedDrawings={drawings[drawingsKey]}
                 onDrawingsChange={handleDrawingsChange}
                 tradeMarkers={btMarkers}
+                labelText={labelText}
               />
             </div>
             <Institutional symbol={symbol} />

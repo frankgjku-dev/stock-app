@@ -633,7 +633,7 @@ export default function Chart({
 
     // ── RSI（獨立 'rsi' 價格軸）──
     const rsiSeries = chart.addLineSeries({
-      priceScaleId:'rsi', color:'#9068b8', lineWidth:1.5,
+      priceScaleId:'rsi', color:'#9068b8', lineWidth:2,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     })
     // 參考線 70 / 50 / 30
@@ -647,11 +647,11 @@ export default function Chart({
       priceScaleId:'macd', priceLineVisible:false, lastValueVisible:false,
     })
     S.current.series.macdLine = chart.addLineSeries({
-      priceScaleId:'macd', color:'#5a8ec8', lineWidth:1.5,
+      priceScaleId:'macd', color:'#5a8ec8', lineWidth:2,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     })
     S.current.series.macdSignal = chart.addLineSeries({
-      priceScaleId:'macd', color:'#c85a50', lineWidth:1.5,
+      priceScaleId:'macd', color:'#c85a50', lineWidth:2,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     })
     // MACD 零軸
