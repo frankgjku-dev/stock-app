@@ -201,6 +201,23 @@ body {
 .tool-btn:hover  { background: var(--surface-2); color: var(--text-1); }
 .tool-btn.active { background: var(--accent-dim); color: var(--accent); }
 
+/* 文字工具輸入框（垂直工具列內，豎排輸入）*/
+.text-tool-input {
+  width: 26px;
+  height: 100px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 11px;
+  padding: 4px 3px;
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-1);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
 /* ── Color Section ────────────────────────────────────── */
 .color-section {
   display: flex;
@@ -285,6 +302,7 @@ body {
   user-select: none;
 }
 .ma-badge.active { opacity: 1; }
+.ind-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
 
 /* ── Loading ─────────────────────────────────────────── */
 .loading-overlay {

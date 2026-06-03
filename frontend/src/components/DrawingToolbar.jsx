@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 const TOOLS = [
   { id: 'cursor',     icon: '↖',  label: '選取 / 移動 (Esc 取消選取)' },
@@ -11,6 +11,7 @@ const TOOLS = [
   { id: 'rectangle',  icon: '▭',  label: '矩形區間：點兩下定對角' },
   { id: 'fibonacci',  icon: '≋',  label: '斐波那契回調：點兩下定高低點' },
   { id: 'arc',        icon: '⌒',  label: '弧形量幅：點兩下定起終點，顯示漲跌%' },
+  { id: 'text',       icon: 'T',  label: '文字標注：先輸入文字，再點擊放置' },
 ]
 
 const PRESET_COLORS = [
@@ -23,7 +24,11 @@ const PRESET_COLORS = [
   { hex: '#1e140a', label: '深焙' },
 ]
 
-export default function DrawingToolbar({ activeTool, onToolChange, onClearAll, drawColor = '#b86e2a', onColorChange }) {
+export default function DrawingToolbar({
+  activeTool, onToolChange, onClearAll,
+  drawColor = '#b86e2a', onColorChange,
+  labelText = '', onLabelTextChange,
+}) {
   const colorInputRef = useRef(null)
 
   return (
@@ -43,6 +48,23 @@ export default function DrawingToolbar({ activeTool, onToolChange, onClearAll, d
           )
       )}
 
+      {/* 文字工具輸入框（選取 text 工具才顯示）*/}
+      {activeTool === 'text' && (
+        <>
+          <div className="tool-sep" />
+          <input
+            className="text-tool-input"
+            type="text"
+            value={labelText}
+            onChange={e => onLabelTextChange?.(e.target.value)}
+            placeholder="輸入標注文字…"
+            maxLength={30}
+            autoFocus
+            title="輸入後點擊圖表放置"
+          />
+        </>
+      )}
+
       <div className="tool-sep" />
 
       {/* 清除所有繪圖 */}
@@ -59,7 +81,6 @@ export default function DrawingToolbar({ activeTool, onToolChange, onClearAll, d
 
       {/* ── 畫線顏色 ── */}
       <div className="color-section" title="畫線顏色">
-        {/* 預設色塊 */}
         {PRESET_COLORS.map(({ hex, label }) => (
           <button
             key={hex}

@@ -53,10 +53,12 @@ export default function App() {
   const [period,     setPeriod]     = useState('1y')
   const [btMarkersData, setBtMarkersData] = useState(null) // { symbol, markers[] }
   const btMarkers = btMarkersData?.symbol === symbol ? btMarkersData.markers : null
-  const [activeTool, setActiveTool] = useState('cursor')
-  const [drawColor,  setDrawColor]  = useState('#b86e2a')
+  const [activeTool,  setActiveTool]  = useState('cursor')
+  const [drawColor,   setDrawColor]   = useState('#b86e2a')
+  const [labelText,   setLabelText]   = useState('')
   const [indicators, setIndicators] = useState({
     ma5: true, ma10: true, ma20: true, ma60: true, ma120: false, ma240: false,
+    bb: false, volMA: false, rsi: false, macd: false,
   })
 
   /* ── data state（先從 localStorage 讀，登入後從雲端覆蓋）── */
@@ -410,6 +412,7 @@ export default function App() {
             activeTool={activeTool} onToolChange={setActiveTool}
             onClearAll={() => chartClearRef.current?.()}
             drawColor={drawColor} onColorChange={setDrawColor}
+            labelText={labelText} onLabelTextChange={setLabelText}
           />
           <div className="chart-area">
             <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />

@@ -13,6 +13,94 @@ const MA_CONFIG = [
   { key:'ma240', period:240, color:'#c89050' },
 ]
 
+// ── 技術指標計算 ─────────────────────────────────────────────────
+function calcBB(candles, period = 20, mult = 2) {
+  const upper = [], middle = [], lower = []
+  for (let i = period - 1; i < candles.length; i++) {
+    const sl   = candles.slice(i - period + 1, i + 1)
+    const mean = sl.reduce((s, c) => s + c.close, 0) / period
+    const std  = Math.sqrt(sl.reduce((s, c) => s + (c.close - mean) ** 2, 0) / period)
+    upper.push({ time: candles[i].time, value: +(mean + mult * std).toFixed(3) })
+    middle.push({ time: candles[i].time, value: +mean.toFixed(3) })
+    lower.push({ time: candles[i].time, value: +(mean - mult * std).toFixed(3) })
+  }
+  return { upper, middle, lower }
+}
+
+function calcRSI(candles, period = 14) {
+  const out = []
+  if (candles.length <= period) return out
+  let ag = 0, al = 0
+  for (let i = 1; i <= period; i++) {
+    const d = candles[i].close - candles[i - 1].close
+    ag += Math.max(0, d); al += Math.max(0, -d)
+  }
+  ag /= period; al /= period
+  for (let i = period; i < candles.length; i++) {
+    if (i > period) {
+      const d = candles[i].close - candles[i - 1].close
+      ag = (ag * (period - 1) + Math.max(0, d))  / period
+      al = (al * (period - 1) + Math.max(0, -d)) / period
+    }
+    const rsi = al === 0 ? 100 : +(100 - 100 / (1 + ag / al)).toFixed(2)
+    out.push({ time: candles[i].time, value: rsi })
+  }
+  return out
+}
+
+function _ema(vals, period) {
+  const k = 2 / (period + 1), out = [vals[0]]
+  for (let i = 1; i < vals.length; i++) out.push(vals[i] * k + out[i - 1] * (1 - k))
+  return out
+}
+
+function calcMACD(candles, fast = 12, slow = 26, signal = 9) {
+  const closes = candles.map(c => c.close)
+  const ef = _ema(closes, fast), es = _ema(closes, slow)
+  const macdArr = closes.map((_, i) => ef[i] - es[i])
+  const sigArr  = _ema(macdArr.slice(slow - 1), signal)
+  const out = { macd: [], signal: [], hist: [] }
+  for (let i = slow - 1; i < candles.length; i++) {
+    const m = macdArr[i], s = sigArr[i - (slow - 1)], h = m - s
+    out.macd.push({ time: candles[i].time, value: +m.toFixed(4) })
+    out.signal.push({ time: candles[i].time, value: +s.toFixed(4) })
+    out.hist.push({ time: candles[i].time, value: +h.toFixed(4),
+      color: h >= 0 ? '#4a946888' : '#c85a5088' })
+  }
+  return out
+}
+
+function calcVolMA(candles, period = 5) {
+  const out = []
+  for (let i = period - 1; i < candles.length; i++) {
+    const avg = candles.slice(i - period + 1, i + 1).reduce((s, c) => s + c.volume, 0) / period
+    out.push({ time: candles[i].time, value: Math.round(avg) })
+  }
+  return out
+}
+
+// RSI/MACD 子圖佈局
+function _applyPaneLayout(chart, cs, showRSI, showMACD) {
+  if (!chart || !cs) return
+  if (!showRSI && !showMACD) {
+    cs.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.24 } })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
+  } else if (showRSI && !showMACD) {
+    cs.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.46 } })
+    chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.58, bottom: 0.20 } })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } })
+  } else if (!showRSI && showMACD) {
+    cs.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.46 } })
+    chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.58, bottom: 0.20 } })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } })
+  } else {
+    cs.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.62 } })
+    chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.42, bottom: 0.42 } })
+    chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.63, bottom: 0.20 } })
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } })
+  }
+}
+
 const FIB_LEVELS = [
   { r:0,     label:'0%',    color:'#c85a50' },
   { r:0.236, label:'23.6%', color:'#c87830' },
@@ -64,7 +152,8 @@ function lighten(hex) {
 export default function Chart({
   candles, indicators, activeTool, onToolChange, drawColor = '#b86e2a', clearRef,
   drawingsKey, savedDrawings, onDrawingsChange,
-  tradeMarkers,   // [{ time, position, color, shape, text }] — 回測買賣點標記
+  tradeMarkers,           // [{ time, position, color, shape, text }] — 回測買賣點標記
+  labelText = '',         // 文字標注工具：當前輸入的文字
 }) {
   const containerRef        = useRef(null)
   const activeToolRef       = useRef(activeTool)
@@ -72,10 +161,14 @@ export default function Chart({
   const onDrawingsChangeRef = useRef(onDrawingsChange)
   const onToolChangeRef     = useRef(onToolChange)
   const tradeMarkersRef     = useRef(tradeMarkers)
+  const indicatorsRef       = useRef(indicators)
+  const labelTextRef        = useRef(labelText)
   activeToolRef.current       = activeTool
   drawColorRef.current        = drawColor
   onDrawingsChangeRef.current = onDrawingsChange
   onToolChangeRef.current     = onToolChange
+  indicatorsRef.current       = indicators
+  labelTextRef.current        = labelText
   tradeMarkersRef.current     = tradeMarkers
 
   const S = useRef({
@@ -145,6 +238,14 @@ export default function Chart({
     const T = 9
     if (type === 'horizontal') return Math.abs(my - p1.y) < T
     if (type === 'vertical')   return Math.abs(mx - p1.x) < T
+    // 文字：點中背景框或錨點
+    if (type === 'text') {
+      if (Math.hypot(mx - p1.x, my - p1.y) < 8) return true
+      const tw = (d.text?.length ?? 0) * 7.5 + 16   // 估算寬度
+      const bh = 22
+      return mx >= p1.x - tw / 2 && mx <= p1.x + tw / 2 &&
+             my >= p1.y - bh - 4  && my <= p1.y - 4
+    }
     if (!pts[1]) return false
     const p2 = toPixel(pts[1])
     if (!p2) return false
@@ -378,6 +479,28 @@ export default function Chart({
           }
           break
         }
+        case 'text': {
+          if (!d.text) break
+          ctx.save()
+          ctx.setLineDash([])
+          ctx.font = `bold 12px Inter, system-ui, sans-serif`
+          const tw   = ctx.measureText(d.text).width
+          const pad  = 8, bh = 22
+          const bx   = p1.x - tw / 2 - pad
+          const by   = p1.y - bh - 4
+          ctx.fillStyle = selected ? lighten(color) + 'dd' : color + 'cc'
+          if (ctx.roundRect) ctx.roundRect(bx, by, tw + pad * 2, bh, 4)
+          else ctx.rect(bx, by, tw + pad * 2, bh)
+          ctx.fill()
+          ctx.fillStyle = '#fff'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(d.text, p1.x, by + bh / 2)
+          ctx.fillStyle = selected ? lighten(color) : color
+          ctx.beginPath(); ctx.arc(p1.x, p1.y, selected ? 4 : 2.5, 0, Math.PI * 2); ctx.fill()
+          ctx.restore()
+          break
+        }
       }
 
       // ── 通用端點 handle（選取 + 非預覽 + 非 arc，arc 有自己的 handle）──
@@ -495,6 +618,44 @@ export default function Chart({
         priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
       })
     })
+
+    // ── Bollinger Bands（主要價格軸，覆蓋在 K 棒上）──
+    const bbOpts = { lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false }
+    S.current.series.bbUpper  = chart.addLineSeries({ ...bbOpts, color:'#5a8ec899', lineStyle:1 })
+    S.current.series.bbMiddle = chart.addLineSeries({ ...bbOpts, color:'#5a8ec855', lineStyle:1 })
+    S.current.series.bbLower  = chart.addLineSeries({ ...bbOpts, color:'#5a8ec899', lineStyle:1 })
+
+    // ── 成交量 MA5（'vol' 價格軸）──
+    S.current.series.volMA = chart.addLineSeries({
+      priceScaleId:'vol', color:'#c89050cc', lineWidth:1,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    })
+
+    // ── RSI（獨立 'rsi' 價格軸）──
+    const rsiSeries = chart.addLineSeries({
+      priceScaleId:'rsi', color:'#9068b8', lineWidth:1.5,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    })
+    // 參考線 70 / 50 / 30
+    rsiSeries.createPriceLine({ price:70, color:'#c85a5055', lineWidth:1, lineStyle:1, axisLabelVisible:true, title:'70' })
+    rsiSeries.createPriceLine({ price:50, color:'#7a5c3844', lineWidth:1, lineStyle:2, axisLabelVisible:false })
+    rsiSeries.createPriceLine({ price:30, color:'#4a946855', lineWidth:1, lineStyle:1, axisLabelVisible:true, title:'30' })
+    S.current.series.rsi = rsiSeries
+
+    // ── MACD（獨立 'macd' 價格軸）──
+    S.current.series.macdHist = chart.addHistogramSeries({
+      priceScaleId:'macd', priceLineVisible:false, lastValueVisible:false,
+    })
+    S.current.series.macdLine = chart.addLineSeries({
+      priceScaleId:'macd', color:'#5a8ec8', lineWidth:1.5,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    })
+    S.current.series.macdSignal = chart.addLineSeries({
+      priceScaleId:'macd', color:'#c85a50', lineWidth:1.5,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    })
+    // MACD 零軸
+    S.current.series.macdLine.createPriceLine({ price:0, color:'#7a5c3866', lineWidth:1, lineStyle:2, axisLabelVisible:false })
 
     // ── OHLC 資訊列（頂部懸浮 legend）──────────────
     const legend = document.createElement('div')
@@ -651,6 +812,15 @@ export default function Chart({
       }
 
       const color = drawColorRef.current
+      // 文字工具：一點即放置
+      if (tool === 'text') {
+        const txt = labelTextRef.current.trim()
+        if (!txt) return
+        S.current.drawings.push({ type: 'text', pts: [dp], color, text: txt })
+        onDrawingsChangeRef.current?.(S.current.drawings)
+        redraw()
+        return
+      }
       const oneClick = tool === 'horizontal' || tool === 'vertical'
 
       if (!S.current.preview) {
@@ -938,6 +1108,23 @@ export default function Chart({
       color: c.close >= c.open ? `${CANDLE_UP}60` : `${CANDLE_DOWN}60`,
     })))
     MA_CONFIG.forEach(({ key, period }) => series[key]?.setData(calcMA(candles, period)))
+
+    // ── 技術指標 ──
+    const bb     = calcBB(candles)
+    series.bbUpper?.setData(bb.upper)
+    series.bbMiddle?.setData(bb.middle)
+    series.bbLower?.setData(bb.lower)
+    series.volMA?.setData(calcVolMA(candles))
+    series.rsi?.setData(calcRSI(candles))
+    const macd = calcMACD(candles)
+    series.macdHist?.setData(macd.hist)
+    series.macdLine?.setData(macd.macd)
+    series.macdSignal?.setData(macd.signal)
+
+    // ── 套用目前的佈局（RSI/MACD 子圖高度）──
+    const ind = indicatorsRef.current
+    _applyPaneLayout(chart, series.candle, ind?.rsi, ind?.macd)
+
     // 建立 time → candle 的快速查表（Ctrl 吸附用）
     S.current.candleMap = new Map(candles.map(c => [c.time, c]))
     // 資料載入後套用回測標記（若有）
@@ -963,12 +1150,28 @@ export default function Chart({
     _scrollToMarkers(chart, tradeMarkers)
   }, [tradeMarkers])
 
-  /* ── MA 開關 ──────────────────────────────────── */
+  /* ── 指標開關（MA + BB + VolMA + RSI + MACD）── */
   useEffect(() => {
     if (!indicators) return
+    const { series, chart } = S.current
     MA_CONFIG.forEach(({ key }) =>
-      S.current.series[key]?.applyOptions({ visible: indicators[key] !== false })
+      series[key]?.applyOptions({ visible: indicators[key] !== false })
     )
+    // BB
+    const showBB = !!indicators.bb
+    series.bbUpper?.applyOptions({ visible: showBB })
+    series.bbMiddle?.applyOptions({ visible: showBB })
+    series.bbLower?.applyOptions({ visible: showBB })
+    // VolMA
+    series.volMA?.applyOptions({ visible: !!indicators.volMA })
+    // RSI / MACD 需要重排佈局
+    const showRSI  = !!indicators.rsi
+    const showMACD = !!indicators.macd
+    series.rsi?.applyOptions({ visible: showRSI })
+    series.macdHist?.applyOptions({ visible: showMACD })
+    series.macdLine?.applyOptions({ visible: showMACD })
+    series.macdSignal?.applyOptions({ visible: showMACD })
+    _applyPaneLayout(chart, series.candle, showRSI, showMACD)
   }, [indicators])
 
   /* ── 清除全部 ─────────────────────────────────── */
