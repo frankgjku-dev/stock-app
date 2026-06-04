@@ -21,15 +21,15 @@ import { supabase }     from './lib/supabase'
 import { API_BASE, APP_VERSION } from './config'
 
 const TABS = [
-  { id: 'chart',      label: 'K線分析' },
-  { id: 'screener',   label: '選股 (Minervini)' },
-  { id: 'intel',      label: '📡 市場情報' },
-  { id: 'backtest',   label: '回測' },
-  { id: 'calculator', label: '部位計算機' },
-  { id: 'holdings',   label: '📊 持倉' },
-  { id: 'journal',    label: '交易日誌' },
-  { id: 'rs',         label: '💪 RS排行' },
-  { id: 'analysis',   label: '🔍 個股分析' },
+  { id: 'chart',      label: 'K線分析',          icon: '📈', mobileLabel: 'K線'  },
+  { id: 'screener',   label: '選股 (Minervini)', icon: '🔎', mobileLabel: '選股' },
+  { id: 'intel',      label: '📡 市場情報',       icon: '📡', mobileLabel: '情報' },
+  { id: 'backtest',   label: '回測',              icon: '⏱', mobileLabel: '回測' },
+  { id: 'calculator', label: '部位計算機',         icon: '🧮', mobileLabel: '計算' },
+  { id: 'holdings',   label: '📊 持倉',            icon: '📊', mobileLabel: '持倉' },
+  { id: 'journal',    label: '交易日誌',           icon: '📓', mobileLabel: '日誌' },
+  { id: 'rs',         label: '💪 RS排行',          icon: '💪', mobileLabel: 'RS'  },
+  { id: 'analysis',   label: '🔍 個股分析',        icon: '🔍', mobileLabel: '分析' },
 ]
 
 const DEFAULT_WATCHLIST = { groups: [] }
@@ -47,6 +47,7 @@ export default function App() {
   const syncTimer = useRef(null)
 
   /* ── UI state ── */
+  const [isMobile,   setIsMobile]   = useState(() => localStorage.getItem('tw_layout') === 'mobile')
   const [tab,        setTab]        = useState('chart')
   const [symbol,     setSymbol]     = useState(() => localStorage.getItem('tw_last_symbol') || '2330')
   const [interval,   setInterval]   = useState(() => localStorage.getItem('tw_last_interval') || '1d')
@@ -369,7 +370,7 @@ export default function App() {
 
   /* ════════════════════════════════════════════════ */
   return (
-    <div className="app">
+    <div className={`app${isMobile ? ' mobile-layout' : ''}`}>
 
       {/* ── 頂部 ── */}
       {tab === 'chart' ? (
@@ -391,6 +392,19 @@ export default function App() {
 
       {/* ── 雲端同步狀態列 ── */}
       <div className="sync-bar">
+        {/* 💻/📱 版面切換 */}
+        <button
+          className="layout-toggle-btn"
+          title={isMobile ? '切換到電腦版' : '切換到手機版'}
+          onClick={() => {
+            const next = !isMobile
+            setIsMobile(next)
+            localStorage.setItem('tw_layout', next ? 'mobile' : 'desktop')
+          }}
+        >
+          {isMobile ? '💻' : '📱'}
+        </button>
+
         {/* 🔔 警示鈴 */}
         <button className="bell-btn" onClick={() => setShowAlerts(true)}>
           🔔
@@ -413,15 +427,22 @@ export default function App() {
         )}
       </div>
 
-      {/* ── Tab 列 ── */}
-      <div className="tab-bar">
+      {/* ── Tab 列（電腦版：上方橫排 ｜ 手機版：下方固定底部）── */}
+      <div className={isMobile ? 'tab-bar-mobile' : 'tab-bar'}>
         {TABS.map(t => (
           <button
             key={t.id}
-            className={`tab-btn ${tab === t.id ? 'active' : ''}`}
+            className={isMobile ? `tab-btn-mobile ${tab === t.id ? 'active' : ''}` : `tab-btn ${tab === t.id ? 'active' : ''}`}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            {isMobile ? (
+              <>
+                <span className="tab-mobile-icon">{t.icon}</span>
+                <span className="tab-mobile-label">{t.mobileLabel}</span>
+              </>
+            ) : (
+              t.label
+            )}
             {t.id === 'holdings' && holdings.filter(h => h.status !== 'sold').length > 0 && (
               <span className="tab-badge">{holdings.filter(h => h.status !== 'sold').length}</span>
             )}
@@ -432,12 +453,14 @@ export default function App() {
       {/* ── 內容 ── */}
       {tab === 'chart' && (
         <div className="main">
-          <DrawingToolbar
-            activeTool={activeTool} onToolChange={setActiveTool}
-            onClearAll={() => chartClearRef.current?.()}
-            drawColor={drawColor} onColorChange={setDrawColor}
-            labelText={labelText} onLabelTextChange={setLabelText}
-          />
+          {!isMobile && (
+            <DrawingToolbar
+              activeTool={activeTool} onToolChange={setActiveTool}
+              onClearAll={() => chartClearRef.current?.()}
+              drawColor={drawColor} onColorChange={setDrawColor}
+              labelText={labelText} onLabelTextChange={setLabelText}
+            />
+          )}
           <div className="chart-area">
             <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />
             <div className="chart-wrapper">
@@ -476,13 +499,15 @@ export default function App() {
             <Institutional symbol={symbol} />
             <StockNotes symbol={symbol} notes={notes} onChange={handleNoteChange} />
           </div>
-          <WatchlistSidebar
-            watchlist={watchlist} currentSymbol={symbol}
-            onSelectSymbol={switchStock} onToggleInGroup={toggleInGroup}
-            onAddGroup={addGroup} onDeleteGroup={deleteGroup} onRenameGroup={renameGroup}
-            onReorderStock={reorderStock}
-            activeHoldings={holdings.filter(h => h.status !== 'sold')}
-          />
+          {!isMobile && (
+            <WatchlistSidebar
+              watchlist={watchlist} currentSymbol={symbol}
+              onSelectSymbol={switchStock} onToggleInGroup={toggleInGroup}
+              onAddGroup={addGroup} onDeleteGroup={deleteGroup} onRenameGroup={renameGroup}
+              onReorderStock={reorderStock}
+              activeHoldings={holdings.filter(h => h.status !== 'sold')}
+            />
+          )}
         </div>
       )}
 
