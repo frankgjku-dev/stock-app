@@ -47,7 +47,8 @@ export default function App() {
   const syncTimer = useRef(null)
 
   /* ── UI state ── */
-  const [isMobile,   setIsMobile]   = useState(() => localStorage.getItem('tw_layout') === 'mobile')
+  const [isMobile,        setIsMobile]        = useState(() => localStorage.getItem('tw_layout') === 'mobile')
+  const [showMobileWatchlist, setShowMobileWatchlist] = useState(false)
   const [tab,        setTab]        = useState('chart')
   const [symbol,     setSymbol]     = useState(() => localStorage.getItem('tw_last_symbol') || '2330')
   const [interval,   setInterval]   = useState(() => localStorage.getItem('tw_last_interval') || '1d')
@@ -509,6 +510,36 @@ export default function App() {
             />
           )}
         </div>
+      )}
+
+      {/* ── 手機版自選股浮動按鈕 + 抽屜 ── */}
+      {isMobile && tab === 'chart' && (
+        <>
+          {/* 浮動開啟按鈕 */}
+          <button
+            className="mobile-wl-fab"
+            onClick={() => setShowMobileWatchlist(true)}
+            title="自選股"
+          >
+            ☰
+          </button>
+
+          {/* 抽屜遮罩 */}
+          {showMobileWatchlist && (
+            <div className="mobile-wl-overlay" onClick={() => setShowMobileWatchlist(false)}>
+              <div className="mobile-wl-drawer" onClick={e => e.stopPropagation()}>
+                <WatchlistSidebar
+                  watchlist={watchlist} currentSymbol={symbol}
+                  onSelectSymbol={(sym) => { switchStock(sym); setShowMobileWatchlist(false) }}
+                  onToggleInGroup={toggleInGroup}
+                  onAddGroup={addGroup} onDeleteGroup={deleteGroup} onRenameGroup={renameGroup}
+                  onReorderStock={reorderStock}
+                  activeHoldings={holdings.filter(h => h.status !== 'sold')}
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {tab === 'screener' && (

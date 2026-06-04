@@ -1975,6 +1975,47 @@ body {
   padding-bottom: 0;
 }
 
+/* ── 手機版自選股浮動按鈕 ── */
+.mobile-wl-fab {
+  position: fixed;
+  left: 12px;
+  bottom: 78px; /* 在 tab bar 上方 */
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 990;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.30);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform var(--trans), box-shadow var(--trans);
+}
+.mobile-wl-fab:hover { transform: scale(1.08); box-shadow: 0 5px 18px rgba(0,0,0,0.38); }
+
+/* ── 手機版自選股抽屜 ── */
+.mobile-wl-overlay {
+  position: fixed; inset: 0;
+  background: rgba(30,20,10,0.45);
+  z-index: 9000;
+  display: flex;
+  align-items: stretch;
+}
+.mobile-wl-drawer {
+  width: 280px;
+  max-width: 82vw;
+  background: var(--surface);
+  height: 100%;
+  overflow-y: auto;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+  animation: slideInLeft 0.22s ease;
+}
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
 /* 手機版：讓各 page 底部留空給 tab bar */
 .mobile-layout .screener-page,
 .mobile-layout .calc-page,
