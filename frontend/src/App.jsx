@@ -48,9 +48,9 @@ export default function App() {
 
   /* ── UI state ── */
   const [tab,        setTab]        = useState('chart')
-  const [symbol,     setSymbol]     = useState('2330')
-  const [interval,   setInterval]   = useState('1d')
-  const [period,     setPeriod]     = useState('1y')
+  const [symbol,     setSymbol]     = useState(() => localStorage.getItem('tw_last_symbol') || '2330')
+  const [interval,   setInterval]   = useState(() => localStorage.getItem('tw_last_interval') || '1d')
+  const [period,     setPeriod]     = useState(() => localStorage.getItem('tw_last_period') || '1y')
   const [btMarkersData, setBtMarkersData] = useState(null) // { symbol, markers[] }
   const btMarkers = btMarkersData?.symbol === symbol ? btMarkersData.markers : null
   const [activeTool,  setActiveTool]  = useState('cursor')
@@ -218,6 +218,8 @@ export default function App() {
 
   const handleIntervalChange = useCallback((iv, p) => {
     setInterval(iv); setPeriod(p)
+    localStorage.setItem('tw_last_interval', iv)
+    localStorage.setItem('tw_last_period', p)
   }, [])
 
   // 切換股票：重置為日線 1y（避免帶著前一個股票的 interval/period 設定）
@@ -225,6 +227,9 @@ export default function App() {
     setSymbol(sym)
     setInterval('1d')
     setPeriod('1y')
+    localStorage.setItem('tw_last_symbol', sym)
+    localStorage.setItem('tw_last_interval', '1d')
+    localStorage.setItem('tw_last_period', '1y')
   }, [])
 
   // 從回測交易紀錄跳到 K 線圖並標記買賣點
