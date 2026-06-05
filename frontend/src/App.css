@@ -952,6 +952,39 @@ body {
 .disc-warn  { font-size: 12px; color: var(--warn); }
 .disc-ok    { font-size: 12px; color: var(--down); }
 
+/* ── 手動張數反算結果 ── */
+.manual-lots-result {
+  background: var(--surface-2);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+.manual-lots-title {
+  font-size: 13px; font-weight: 700;
+  color: var(--accent); margin-bottom: 12px;
+}
+.manual-lots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.manual-lot-item {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mli-label { font-size: 11px; color: var(--text-3); }
+.mli-val   { font-size: 16px; font-weight: 700; color: var(--text-1); }
+.mli-sub   { font-size: 11px; color: var(--text-2); }
+.mli-danger { color: var(--up) !important; }
+.mli-profit { color: var(--down); }
+.manual-lots-warn {
+  margin-top: 10px;
+  font-size: 12px; color: var(--warn);
+  padding: 6px 10px;
+  background: var(--warn-dim);
+  border-radius: var(--r-sm);
+}
+
 /* Progressive Exposure */
 .progressive-section { margin-top: 8px; }
 .prog-title { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 5px; }

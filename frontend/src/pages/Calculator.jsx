@@ -35,6 +35,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
   const [entry,     setEntry]     = useState('')
   const [stopPctIn, setStopPctIn] = useState('')
   const [targetR,   setTargetR]   = useState('')
+  const [manualLots, setManualLots] = useState('')     // 選填：手動指定張數
   const [showMethod, setShowMethod] = useState(false)
   const [added,     setAdded]     = useState(false)
 
@@ -74,6 +75,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
     const tr  = parseFloat(targetR) || null
     const acc = parseFloat(account) || null    // 選填：空白 → null
     const rp  = parseFloat(riskPct) / 100
+    const ml  = parseInt(manualLots) || null   // 選填：手動張數
 
     if (!e || !sp || e <= 0 || sp <= 0 || sp >= 100) return null
 
@@ -81,7 +83,7 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
     const stopDist    = e - stopPrice
     const targetPrice = tr && tr > 0 ? e + stopDist * tr : null
 
-    // ── 帳戶相關計算（選填，無則 null）──
+    // ── 風險公式計算張數（需帳戶）──
     let lots = null, shares = null, sharesOdd = null
     let positionVal = null, positionPct = null
     let actualRisk = null, actualRiskPct = null
@@ -99,6 +101,25 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
       targetProfit  = tr != null && targetPrice != null ? shares * (targetPrice - e) : null
     }
 
+    // ── 手動張數反算（選填）──
+    let manualResult = null
+    if (ml && ml > 0) {
+      const mShares    = ml * 1000
+      const mPosiVal   = mShares * e
+      const mRisk      = mShares * stopDist
+      const mPosiPct   = acc ? mPosiVal / acc * 100 : null
+      const mRiskPct   = acc ? mRisk / acc * 100 : null
+      const mProfit    = targetPrice ? mShares * (targetPrice - e) : null
+      manualResult = {
+        lots: ml, shares: mShares,
+        positionVal: mPosiVal, positionPct: mPosiPct,
+        risk: mRisk, riskPct: mRiskPct,
+        profit: mProfit,
+        overRisk: mRiskPct != null && mRiskPct > 2.5,
+        overConc: mPosiPct != null && mPosiPct > 30,
+      }
+    }
+
     return {
       hasAccount: acc != null && acc > 0,
       acc,
@@ -108,8 +129,9 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
       positionVal, positionPct,
       actualRisk, actualRiskPct,
       rr: targetPrice ? tr : null, targetProfit,
+      manualResult,
     }
-  }, [account, riskPct, entry, stopPctIn, targetR])
+  }, [account, riskPct, entry, stopPctIn, targetR, manualLots])
 
   // 漸進式建倉（需要帳戶資金）
   const progressive = useMemo(() => {
@@ -186,6 +208,24 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
               <span className="calc-affix">%</span>
             </div>
             {calc && <div className="calc-computed">→ 停損價 ${calc.stopPrice.toFixed(2)}</div>}
+          </div>
+
+          {/* 購買張數（選填）*/}
+          <div className="calc-field">
+            <label className="calc-label">
+              購買張數
+              <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 6 }}>（選填）</span>
+            </label>
+            <span className="calc-hint">手動指定張數，反算部位金額與風險</span>
+            <div className="calc-input-wrap">
+              <input className="calc-input" type="number"
+                value={manualLots} onChange={e => setManualLots(e.target.value.replace(/[^0-9]/g, ''))}
+                min={1} step={1} placeholder="例：5" />
+              <span className="calc-affix">張</span>
+            </div>
+            {calc?.manualResult && (
+              <div className="calc-computed">→ {(calc.manualResult.shares).toLocaleString()} 股</div>
+            )}
           </div>
 
           {/* 目標 */}
@@ -293,6 +333,45 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
                      : calc.rr >= 2 ? '　⚠️ 可接受（≥2R）'
                      : '　❌ 偏低（<2R）'}
                   </div>
+                </div>
+              )}
+
+              {/* ── 手動張數反算結果 ── */}
+              {calc.manualResult && (
+                <div className="manual-lots-result">
+                  <div className="manual-lots-title">📌 指定 {calc.manualResult.lots} 張 反算結果</div>
+                  <div className="manual-lots-grid">
+                    <div className="manual-lot-item">
+                      <span className="mli-label">部位金額</span>
+                      <span className="mli-val">NT${calc.manualResult.positionVal.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                      {calc.manualResult.positionPct != null &&
+                        <span className="mli-sub">佔帳戶 {calc.manualResult.positionPct.toFixed(1)}%</span>}
+                    </div>
+                    <div className="manual-lot-item">
+                      <span className="mli-label">風險金額</span>
+                      <span className={`mli-val ${calc.manualResult.overRisk ? 'mli-danger' : ''}`}>
+                        NT${calc.manualResult.risk.toLocaleString(undefined,{maximumFractionDigits:0})}
+                      </span>
+                      {calc.manualResult.riskPct != null &&
+                        <span className={`mli-sub ${calc.manualResult.overRisk ? 'mli-danger' : ''}`}>
+                          佔帳戶 {calc.manualResult.riskPct.toFixed(2)}%
+                          {calc.manualResult.overRisk ? ' ⚠️超標' : ' ✅'}
+                        </span>}
+                    </div>
+                    {calc.manualResult.profit != null && (
+                      <div className="manual-lot-item">
+                        <span className="mli-label">目標獲利</span>
+                        <span className="mli-val mli-profit">
+                          NT${calc.manualResult.profit.toLocaleString(undefined,{maximumFractionDigits:0})}
+                        </span>
+                        <span className="mli-sub">目標價 ${calc.targetPrice?.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                  {calc.manualResult.overRisk &&
+                    <div className="manual-lots-warn">⚠️ 此張數風險超過 2.5%，建議縮減</div>}
+                  {calc.manualResult.overConc &&
+                    <div className="manual-lots-warn">⚠️ 部位超過帳戶 30%，留意集中風險</div>}
                 </div>
               )}
 
