@@ -1873,28 +1873,124 @@ body {
 .mobile-layout {
   overflow: auto;
 }
-.mobile-layout body {
-  overflow: auto;
-}
 
-/* 手機版 TopBar：允許換行、字縮小 */
-.mobile-layout .topbar {
-  height: auto;
-  min-height: 54px;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 12px;
-}
-.mobile-layout .logo { font-size: 14px; }
-.mobile-layout .search-input { width: 160px; font-size: 12px; }
-.mobile-layout .quote-price  { font-size: 18px; }
-.mobile-layout .interval-selector { flex-wrap: wrap; }
-
-/* 手機版 sync-bar：縮小 */
+/* 手機版 sync-bar：精簡 */
 .mobile-layout .sync-bar {
   padding: 2px 10px;
   font-size: 11px;
   min-height: 24px;
+  gap: 6px;
+}
+.sync-user-mobile {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* 非 chart 頁面的手機版頂部標題 */
+.topbar-mobile-simple {
+  height: 44px !important;
+  min-height: 44px;
+  padding: 0 14px !important;
+  gap: 10px !important;
+}
+.topbar-mobile-tabtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+/* ── 手機版 TopBar（三排佈局）── */
+.topbar-mobile {
+  display: flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  padding: 8px 12px 0 !important;
+  gap: 0 !important;
+}
+
+.topbar-mobile-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.search-input-mobile {
+  width: 100% !important;
+  font-size: 14px !important;
+  padding: 8px 14px !important;
+  border-radius: 10px !important;
+}
+
+.fav-star-btn-mobile {
+  font-size: 22px !important;
+  width: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+}
+
+.topbar-mobile-row2 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0 6px;
+  flex-wrap: wrap;
+}
+.quote-symbol-mobile {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.quote-name-mobile {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.quote-price-mobile {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.quote-change-mobile {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 手機版時間軸：可橫向滾動，按鈕更大 */
+.interval-selector-mobile {
+  display: flex !important;
+  gap: 4px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 6px 0 8px !important;
+  scrollbar-width: none !important;
+  -webkit-overflow-scrolling: touch;
+  margin-left: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  width: 100%;
+}
+.interval-selector-mobile::-webkit-scrollbar { display: none; }
+.interval-selector-mobile .interval-btn {
+  padding: 7px 14px !important;
+  font-size: 13px !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-height: 34px;
+}
+
+/* 手機版 fav popup：從下方彈出 */
+.fav-popup-mobile {
+  position: fixed !important;
+  bottom: 70px !important;
+  right: 12px !important;
+  left: 12px !important;
+  top: auto !important;
+  width: auto !important;
+  max-height: 60vh;
+  overflow-y: auto;
+  border-radius: 16px !important;
+  z-index: 9999 !important;
 }
 
 /* 手機版：主內容區底部留空給 bottom tab bar */
@@ -1950,30 +2046,47 @@ body {
 .tab-mobile-icon  { font-size: 20px; line-height: 1; }
 .tab-mobile-label { font-size: 10px; font-weight: 500; letter-spacing: 0.3px; white-space: nowrap; }
 
+/* 手機版 IndicatorBar：更大的點擊區域、可橫向滾動 */
+.mobile-layout .indicator-bar {
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  height: 44px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  gap: 8px;
+  padding: 0 12px;
+}
+.mobile-layout .indicator-bar::-webkit-scrollbar { display: none; }
+.mobile-layout .ma-badge {
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  flex-shrink: 0;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+
 /* 手機版：內容區域底部留空給 tab bar（65px 高度） */
 .mobile-layout .main {
   margin-bottom: 65px;
   overflow: auto;
-  flex-direction: column; /* 手機版垂直排列 */
+  flex-direction: column;
 }
 .mobile-layout .chart-area {
   overflow: auto;
-  height: calc(100vh - 54px - 24px - 65px); /* viewport - topbar - syncbar - tabbar */
+  flex: none;
 }
 .mobile-layout .chart-wrapper {
-  height: 55vw;
-  min-height: 240px;
-  max-height: 60vh;
+  height: 56vw;
+  min-height: 220px;
+  max-height: 55vh;
   flex: none;
 }
 
 /* 手機版各頁面底部留空 */
-.mobile-layout > div {
-  margin-bottom: 0;
-}
-.mobile-layout > *:not(.tab-bar-mobile) {
-  padding-bottom: 0;
-}
+.mobile-layout > div { margin-bottom: 0; }
+.mobile-layout > *:not(.tab-bar-mobile) { padding-bottom: 0; }
 
 /* ── 手機版自選股浮動按鈕 ── */
 .mobile-wl-fab {
@@ -2025,7 +2138,29 @@ body {
 .mobile-layout .intel-page,
 .mobile-layout .rs-page,
 .mobile-layout .analysis-page {
-  padding-bottom: 70px;
+  padding-bottom: 80px;
   overflow-y: auto;
-  height: calc(100vh - 54px - 24px - 65px);
+  /* TopBar 手機版約 130px + syncbar 24px + tabbar 65px */
+  max-height: calc(100vh - 24px - 65px);
+  box-sizing: border-box;
+}
+
+/* 手機版：表格橫向可滾動，避免內容被截斷 */
+.mobile-layout table {
+  min-width: 600px;
+}
+.mobile-layout .table-wrap,
+.mobile-layout .screener-results,
+.mobile-layout .journal-table-wrap,
+.mobile-layout .holdings-table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 手機版：字體調整 */
+.mobile-layout th,
+.mobile-layout td {
+  font-size: 12px;
+  padding: 8px 10px !important;
+  white-space: nowrap;
 }

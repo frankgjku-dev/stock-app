@@ -379,15 +379,17 @@ export default function App() {
           symbol={symbol} quote={quote} interval={interval} period={period}
           onSymbolChange={switchStock} onIntervalChange={handleIntervalChange}
           watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
+          isMobile={isMobile}
         />
       ) : (
-        <div className="topbar">
+        <div className={isMobile ? 'topbar topbar-mobile-simple' : 'topbar'}>
           <div className="logo">
             台股分析
             <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)', marginLeft: 6, letterSpacing: 0 }}>
               {APP_VERSION}
             </span>
           </div>
+          {isMobile && <span className="topbar-mobile-tabtitle">{TABS.find(t => t.id === tab)?.label}</span>}
         </div>
       )}
 
@@ -416,14 +418,23 @@ export default function App() {
 
         {user ? (
           <>
-            <span className="sync-user">☁ {user.email}</span>
-            {syncing === true    && <span className="sync-dot">同步中…</span>}
-            {syncing === 'error' && <span className="sync-dot" style={{color:'#c85a50'}} title="請開啟 F12 Console 查看詳細錯誤">⚠️ 同步失敗</span>}
-            <button className="sync-logout" onClick={handleLogout}>登出</button>
+            {isMobile ? (
+              /* 手機版：只顯示圖示，點擊顯示 email tooltip */
+              <span className="sync-user sync-user-mobile" title={user.email}>
+                ☁ {syncing === true ? '⏳' : syncing === 'error' ? '⚠️' : '✓'}
+              </span>
+            ) : (
+              <>
+                <span className="sync-user">☁ {user.email}</span>
+                {syncing === true    && <span className="sync-dot">同步中…</span>}
+                {syncing === 'error' && <span className="sync-dot" style={{color:'#c85a50'}} title="請開啟 F12 Console 查看詳細錯誤">⚠️ 同步失敗</span>}
+              </>
+            )}
+            <button className="sync-logout" onClick={handleLogout}>{isMobile ? '登出' : '登出'}</button>
           </>
         ) : (
           <button className="sync-login-btn" onClick={() => setShowAuth(true)}>
-            ☁ 登入以同步雲端
+            {isMobile ? '☁ 登入' : '☁ 登入以同步雲端'}
           </button>
         )}
       </div>
