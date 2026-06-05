@@ -17,12 +17,12 @@ export default function useStockData(symbol, interval, period) {
   const [error,   setError]   = useState(null)
   const pollRef = useRef(null)
 
-  // Historical candles（最多重試 3 次，避免 yfinance rate-limit 暫時失敗）
+  // Historical candles（含後端冷啟動自動等待，最長重試 90 秒）
   useEffect(() => {
     if (!symbol) return
     setLoading(true)
     setError(null)
-    setCandles([])   // 切換股票時立即清掉舊K線，避免顯示錯誤股票的圖
+    setCandles([])
 
     // 分鐘線在目前伺服器環境不支援，直接提示
     const isIntraday = !['1d','1wk','1mo'].includes(interval)
@@ -32,14 +32,37 @@ export default function useStockData(symbol, interval, period) {
       return
     }
 
-    const url = `${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`;
+    const url = `${API_BASE}/api/stocks/${symbol}/candles?interval=${interval}&period=${period}`
+    let cancelled = false
 
-    (async () => {
-      let lastErr = ''
-      for (let i = 0; i < 3; i++) {
+    ;(async () => {
+      // ── 第一步：先 ping 後端根路徑，確認服務有回應（HF 冷啟動期間）
+      let backendAlive = false
+      for (let i = 0; i < 10; i++) {
+        if (cancelled) return
         try {
-          if (i > 0) await new Promise(r => setTimeout(r, 2000))
-          const res = await fetch(url)
+          const r = await fetch(`${API_BASE}/`, { signal: AbortSignal.timeout(8000) })
+          if (r.ok) { backendAlive = true; break }
+        } catch {}
+        // 還沒醒：等 6 秒再試，並提示用戶
+        setError(`後端喚醒中，請稍候… (${(i + 1) * 6}s)`)
+        await new Promise(r => setTimeout(r, 6000))
+      }
+      if (!backendAlive) {
+        setError('後端無回應，請檢查網路或稍後再試')
+        setLoading(false)
+        return
+      }
+
+      // ── 第二步：抓 K 線資料（最多重試 4 次，間隔 3 秒）
+      if (cancelled) return
+      setError(null)
+      let lastErr = ''
+      for (let i = 0; i < 4; i++) {
+        if (cancelled) return
+        try {
+          if (i > 0) await new Promise(r => setTimeout(r, 3000))
+          const res = await fetch(url, { signal: AbortSignal.timeout(20000) })
           const ct  = res.headers.get('content-type') || ''
           if (!ct.includes('application/json')) {
             lastErr = '後端服務啟動中，請稍候再試…'
@@ -47,19 +70,25 @@ export default function useStockData(symbol, interval, period) {
           }
           const data = await res.json()
           if (data.candles?.length) {
-            setCandles(data.candles)
-            setError(null)
-            setLoading(false)
+            if (!cancelled) {
+              setCandles(data.candles)
+              setError(null)
+              setLoading(false)
+            }
             return
           }
           lastErr = data.error || '查無資料'
         } catch (e) {
-          lastErr = '網路錯誤，請稍後重試'
+          lastErr = e.name === 'TimeoutError' ? '後端回應逾時，請稍後再試' : '網路錯誤，請稍後重試'
         }
       }
-      setError(lastErr)
-      setLoading(false)
+      if (!cancelled) {
+        setError(lastErr)
+        setLoading(false)
+      }
     })()
+
+    return () => { cancelled = true }
   }, [symbol, interval, period])
 
   // ── 開盤期間每 3 分鐘靜默刷新日線 K 棒 ──────────────────────
