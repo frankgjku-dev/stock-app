@@ -52,7 +52,10 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
   }, [symbol])
 
   function handleAddHolding() {
-    if (!calc || !symbol.trim() || calc.lots == null || calc.lots === 0) return
+    if (!calc || !symbol.trim()) return
+    // 張數優先用：手動填的 > 公式算的 > 0
+    const finalLots   = calc.manualResult?.lots ?? calc.lots ?? 0
+    const finalShares = finalLots * 1000
     onAddHolding({
       symbol:     symbol.trim(),
       name:       name || symbol.trim(),
@@ -60,8 +63,8 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
       entryPrice: parseFloat(entry),
       stopPct:    parseFloat(stopPctIn),
       stopPrice:  calc.stopPrice,
-      lots:       calc.lots,
-      shares:     calc.shares,
+      lots:       finalLots,
+      shares:     finalShares,
       targetR:    parseFloat(targetR) || null,
       targetPrice: calc.targetPrice || null,
     })
@@ -393,8 +396,8 @@ export default function Calculator({ onAddHolding, onSwitchToHoldings }) {
                   <div className="disc-warn">⚠️ 損益比低於 2:1，建議調整目標或進場點</div>}
               </div>
 
-              {/* 加入持倉（需有帳戶 + 張數）*/}
-              {symbol.trim() && calc.hasAccount && calc.lots > 0 && (
+              {/* 加入持倉（只要有進場價 + 停損即可）*/}
+              {symbol.trim() && calc && (
                 <div style={{ marginTop: 8 }}>
                   {added ? (
                     <div className="hd-added-flash">✅ 已加入持倉！
