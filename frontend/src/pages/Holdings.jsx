@@ -6,6 +6,8 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
   const [loading,       setLoading]      = useState(false)
   const [editTarget,    setEditTarget]   = useState(null)
   const [editTargetVal, setEditTargetVal] = useState('')
+  const [editNote,      setEditNote]     = useState(null)   // id of row being edited
+  const [editNoteVal,   setEditNoteVal]  = useState('')
   const [showSold,      setShowSold]     = useState(true)
 
   // ── 賣出 Modal 狀態 ──
@@ -82,6 +84,16 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
       onUpdate(id, { targetPrice: null, targetR: null })
     }
     setEditTarget(null)
+  }
+
+  // ── 備註 ──
+  function startEditNote(r) {
+    setEditNote(r.id)
+    setEditNoteVal(r.note || '')
+  }
+  function commitEditNote(id) {
+    onUpdate(id, { note: editNoteVal.trim() })
+    setEditNote(null)
   }
 
   // ── 賣出 ──
@@ -244,6 +256,7 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
                 <th>距停損</th>
                 <th>止盈價</th>
                 <th>距止盈</th>
+                <th>備註</th>
                 <th></th>
               </tr>
             </thead>
@@ -361,6 +374,42 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
                         : '—'}
                     </td>
 
+                    {/* 備註 */}
+                    <td style={{ minWidth: 120, maxWidth: 200 }}>
+                      {editNote === r.id ? (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <input
+                            autoFocus
+                            value={editNoteVal}
+                            onChange={e => setEditNoteVal(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') commitEditNote(r.id); if (e.key === 'Escape') setEditNote(null) }}
+                            onBlur={() => commitEditNote(r.id)}
+                            style={{
+                              flex: 1, padding: '3px 7px', fontSize: 12,
+                              background: 'var(--surface-2)', color: 'var(--text-1)',
+                              border: '1px solid var(--accent)', borderRadius: 4, outline: 'none',
+                            }}
+                            placeholder="輸入備註…"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => startEditNote(r)}
+                          title="點擊編輯備註"
+                          style={{
+                            cursor: 'pointer', fontSize: 12, color: r.note ? 'var(--text-1)' : 'var(--text-3)',
+                            minHeight: 22, padding: '2px 4px', borderRadius: 4,
+                            border: '1px dashed transparent',
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-md)'}
+                          onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
+                        >
+                          {r.note || '+ 備註'}
+                        </div>
+                      )}
+                    </td>
+
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button className="hd-btn hd-chart"
@@ -431,6 +480,7 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
                     <th>持有天數</th>
                     <th>損益 %</th>
                     <th>已實現損益</th>
+                    <th>備註</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -454,6 +504,40 @@ export default function Holdings({ holdings, onRemove, onUpdate, onSelectStock }
                       </td>
                       <td className={r.realPnlAmt != null ? (r.realPnlAmt >= 0 ? 'up' : 'down') : ''}>
                         {r.realPnlAmt != null ? fmtN(r.realPnlAmt) : '—'}
+                      </td>
+                      {/* 備註 */}
+                      <td style={{ minWidth: 120, maxWidth: 200 }}>
+                        {editNote === r.id ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <input
+                              autoFocus
+                              value={editNoteVal}
+                              onChange={e => setEditNoteVal(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') commitEditNote(r.id); if (e.key === 'Escape') setEditNote(null) }}
+                              onBlur={() => commitEditNote(r.id)}
+                              style={{
+                                flex: 1, padding: '3px 7px', fontSize: 12,
+                                background: 'var(--surface-2)', color: 'var(--text-1)',
+                                border: '1px solid var(--accent)', borderRadius: 4, outline: 'none',
+                              }}
+                              placeholder="輸入備註…"
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => startEditNote(r)}
+                            title="點擊編輯備註"
+                            style={{
+                              cursor: 'pointer', fontSize: 12, color: r.note ? 'var(--text-1)' : 'var(--text-3)',
+                              minHeight: 22, padding: '2px 4px', borderRadius: 4,
+                              border: '1px dashed transparent', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-md)'}
+                            onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
+                          >
+                            {r.note || '+ 備註'}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
