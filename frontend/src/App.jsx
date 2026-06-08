@@ -47,8 +47,11 @@ export default function App() {
   const syncTimer = useRef(null)
 
   /* ── UI state ── */
-  const [isMobile,        setIsMobile]        = useState(() => localStorage.getItem('tw_layout') === 'mobile')
-  const [showMobileWatchlist, setShowMobileWatchlist] = useState(false)
+  const [isMobile,             setIsMobile]             = useState(() => localStorage.getItem('tw_layout') === 'mobile')
+  const [showMobileWatchlist,  setShowMobileWatchlist]  = useState(false)
+  const [chartFullscreen,      setChartFullscreen]      = useState(false)
+  const [showMobileIndicators, setShowMobileIndicators] = useState(false)
+  const [showMobileSearch,     setShowMobileSearch]     = useState(false)
   const [tab,        setTab]        = useState('chart')
   const [symbol,     setSymbol]     = useState(() => localStorage.getItem('tw_last_symbol') || '2330')
   const [interval,   setInterval]   = useState(() => localStorage.getItem('tw_last_interval') || '1d')
@@ -371,30 +374,34 @@ export default function App() {
 
   /* ════════════════════════════════════════════════ */
   return (
-    <div className={`app${isMobile ? ' mobile-layout' : ''}`}>
+    <div className={`app${isMobile ? ' mobile-layout' : ''}${chartFullscreen ? ' chart-fullscreen' : ''}`}>
 
-      {/* ── 頂部 ── */}
-      {tab === 'chart' ? (
-        <TopBar
-          symbol={symbol} quote={quote} interval={interval} period={period}
-          onSymbolChange={switchStock} onIntervalChange={handleIntervalChange}
-          watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
-          isMobile={isMobile}
-        />
-      ) : (
-        <div className={isMobile ? 'topbar topbar-mobile-simple' : 'topbar'}>
-          <div className="logo">
-            台股分析
-            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)', marginLeft: 6, letterSpacing: 0 }}>
-              {APP_VERSION}
-            </span>
+      {/* ── 頂部（全螢幕時隱藏）── */}
+      {!chartFullscreen && (
+        tab === 'chart' ? (
+          <TopBar
+            symbol={symbol} quote={quote} interval={interval} period={period}
+            onSymbolChange={switchStock} onIntervalChange={handleIntervalChange}
+            watchlist={watchlist} onToggleInGroup={toggleInGroup} onAddGroup={addGroup}
+            isMobile={isMobile}
+            showSearch={showMobileSearch}
+            onToggleSearch={() => setShowMobileSearch(p => !p)}
+          />
+        ) : (
+          <div className={isMobile ? 'topbar topbar-mobile-simple' : 'topbar'}>
+            <div className="logo">
+              台股分析
+              <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)', marginLeft: 6, letterSpacing: 0 }}>
+                {APP_VERSION}
+              </span>
+            </div>
+            {isMobile && <span className="topbar-mobile-tabtitle">{TABS.find(t => t.id === tab)?.label}</span>}
           </div>
-          {isMobile && <span className="topbar-mobile-tabtitle">{TABS.find(t => t.id === tab)?.label}</span>}
-        </div>
+        )
       )}
 
-      {/* ── 雲端同步狀態列 ── */}
-      <div className="sync-bar">
+      {/* ── 雲端同步狀態列（全螢幕時隱藏）── */}
+      {!chartFullscreen && <div className="sync-bar">
         {/* 💻/📱 版面切換 */}
         <button
           className="layout-toggle-btn"
@@ -437,10 +444,10 @@ export default function App() {
             {isMobile ? '☁ 登入' : '☁ 登入以同步雲端'}
           </button>
         )}
-      </div>
+      </div>}
 
-      {/* ── Tab 列（電腦版：上方橫排 ｜ 手機版：下方固定底部）── */}
-      <div className={isMobile ? 'tab-bar-mobile' : 'tab-bar'}>
+      {/* ── Tab 列（電腦版：上方橫排 ｜ 手機版：下方固定底部 ｜ 全螢幕時隱藏）── */}
+      {!chartFullscreen && <div className={isMobile ? 'tab-bar-mobile' : 'tab-bar'}>
         {TABS.map(t => (
           <button
             key={t.id}
@@ -460,11 +467,11 @@ export default function App() {
             )}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* ── 內容 ── */}
       {tab === 'chart' && (
-        <div className="main">
+        <div className={`main${chartFullscreen ? ' main-fullscreen' : ''}`}>
           {!isMobile && (
             <DrawingToolbar
               activeTool={activeTool} onToolChange={setActiveTool}
@@ -474,8 +481,46 @@ export default function App() {
             />
           )}
           <div className="chart-area">
-            <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />
-            <div className="chart-wrapper">
+            {/* 指標列：電腦版常駐，手機版可收折 */}
+            {(!isMobile || showMobileIndicators) && (
+              <IndicatorBar indicators={indicators} onToggle={toggleIndicator} />
+            )}
+
+            {/* 手機版工具列：全螢幕切換 + 指標切換 + 自選股 */}
+            {isMobile && (
+              <div className="mobile-chart-toolbar">
+                <button
+                  className={`mct-btn ${showMobileIndicators ? 'active' : ''}`}
+                  onClick={() => setShowMobileIndicators(p => !p)}
+                  title="指標"
+                >
+                  📊 指標{showMobileIndicators ? ' ▲' : ' ▼'}
+                </button>
+                <button
+                  className="mct-btn"
+                  onClick={() => setShowMobileWatchlist(true)}
+                  title="自選股"
+                >
+                  ☰ 自選股
+                </button>
+                <button
+                  className="mct-btn mct-fullscreen"
+                  onClick={() => setChartFullscreen(p => !p)}
+                  title="全螢幕"
+                >
+                  {chartFullscreen ? '✕ 離開' : '⛶ 全螢幕'}
+                </button>
+              </div>
+            )}
+
+            <div className={`chart-wrapper${isMobile ? ' chart-wrapper-mobile' : ''}`}>
+              {/* 全螢幕時的退出按鈕 */}
+              {chartFullscreen && (
+                <button
+                  className="chart-exit-fullscreen"
+                  onClick={() => setChartFullscreen(false)}
+                >✕</button>
+              )}
               {btMarkers?.length > 0 && (
                 <div style={{
                   position:'absolute', top:6, left:'50%', transform:'translateX(-50%)',
@@ -508,8 +553,30 @@ export default function App() {
                 labelText={labelText}
               />
             </div>
-            <Institutional symbol={symbol} />
-            <StockNotes symbol={symbol} notes={notes} onChange={handleNoteChange} />
+            {!chartFullscreen && <Institutional symbol={symbol} />}
+            {!chartFullscreen && <StockNotes symbol={symbol} notes={notes} onChange={handleNoteChange} />}
+
+            {/* 全螢幕時底部浮動時間軸 */}
+            {chartFullscreen && isMobile && (
+              <div className="fullscreen-interval-bar">
+                {[
+                  {label:'日', iv:'1d', p:'1y'},
+                  {label:'週', iv:'1wk', p:'5y'},
+                  {label:'月', iv:'1mo', p:'max'},
+                  {label:'1y', iv:'1d', p:'1y'},
+                  {label:'2y', iv:'1d', p:'2y'},
+                  {label:'3y', iv:'1d', p:'3y'},
+                  {label:'5y', iv:'1d', p:'5y'},
+                ].map(({label, iv, p}) => (
+                  <button
+                    key={label}
+                    className={`fsi-btn ${interval === iv && period === p ? 'active' : ''}`}
+                    onClick={() => handleIntervalChange(iv, p)}
+                  >{label}</button>
+                ))}
+                <button className="fsi-exit" onClick={() => setChartFullscreen(false)}>✕</button>
+              </div>
+            )}
           </div>
           {!isMobile && (
             <WatchlistSidebar

@@ -18,6 +18,8 @@ export default function TopBar({
   onSymbolChange, onIntervalChange,
   watchlist, onToggleInGroup, onAddGroup,
   isMobile = false,
+  showSearch = false,
+  onToggleSearch = () => {},
 }) {
   const [query,      setQuery]      = useState('')
   const [results,    setResults]    = useState([])
@@ -130,58 +132,69 @@ export default function TopBar({
   if (isMobile) {
     return (
       <div className="topbar topbar-mobile">
-        {/* 第一排：搜尋 + ★ */}
+        {/* 第一排：精簡報價 + 搜尋按鈕 + ★ */}
         <div className="topbar-mobile-row1">
-          <div className="search-wrapper" style={{ flex: 1 }}>
-            <input
-              className="search-input search-input-mobile"
-              placeholder="搜尋股票代碼 / 名稱"
-              value={query}
-              onChange={handleChange}
-              onFocus={() => query && setOpen(results.length > 0)}
-              onBlur={() => setTimeout(() => setOpen(false), 180)}
-            />
-            {open && (
-              <div className="search-dropdown">
-                {results.map(r => (
-                  <div key={r.symbol} className="search-item" onMouseDown={() => pick(r)}>
-                    <span className="search-symbol">{r.symbol}</span>
-                    <span className="search-name">{r.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* 左：股票資訊 */}
+          <div className="topbar-mobile-quote-compact">
+            <span className="quote-symbol-mobile">{symbol}</span>
+            {quote && <>
+              <span className={`quote-price-mobile ${cls}`}>{quote.price?.toFixed(2) ?? '--'}</span>
+              <span className={`quote-change-mobile ${cls}`}>
+                {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
+              </span>
+            </>}
           </div>
-          {/* ★ 加入自選股 */}
-          <div style={{ position: 'relative' }}>
+          {/* 右：搜尋 + ★ */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
             <button
-              className={`fav-star-btn fav-star-btn-mobile ${isFav ? 'active' : ''}`}
-              onClick={() => { setFavOpen(p => !p); setAdding(false) }}
-              title="加入 / 管理自選股"
-            >
-              {isFav ? '★' : '☆'}
-            </button>
-            {favOpen && (
-              <div className="fav-popup fav-popup-mobile" onMouseLeave={() => { setFavOpen(false); setAdding(false) }}>
-                {favPopupContent}
-              </div>
-            )}
+              className={`mct-btn ${showSearch ? 'active' : ''}`}
+              onClick={onToggleSearch}
+              style={{ fontSize: 18, padding: '4px 10px' }}
+              title="搜尋股票"
+            >🔍</button>
+            <div style={{ position: 'relative' }}>
+              <button
+                className={`fav-star-btn fav-star-btn-mobile ${isFav ? 'active' : ''}`}
+                onClick={() => { setFavOpen(p => !p); setAdding(false) }}
+                title="加入 / 管理自選股"
+              >{isFav ? '★' : '☆'}</button>
+              {favOpen && (
+                <div className="fav-popup fav-popup-mobile" onMouseLeave={() => { setFavOpen(false); setAdding(false) }}>
+                  {favPopupContent}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* 第二排：報價 */}
-        {quote && (
-          <div className="topbar-mobile-row2">
-            <span className="quote-symbol-mobile">{symbol}</span>
-            <span className="quote-name-mobile">{quote.name || ''}</span>
-            <span className={`quote-price-mobile ${cls}`}>{quote.price?.toFixed(2) ?? '--'}</span>
-            <span className={`quote-change-mobile ${cls}`}>
-              {change >= 0 ? '+' : ''}{change.toFixed(2)} ({changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%)
-            </span>
+        {/* 搜尋展開（點 🔍 才出現）*/}
+        {showSearch && (
+          <div className="topbar-mobile-search-row">
+            <div className="search-wrapper" style={{ flex: 1 }}>
+              <input
+                autoFocus
+                className="search-input search-input-mobile"
+                placeholder="搜尋股票代碼 / 名稱"
+                value={query}
+                onChange={handleChange}
+                onFocus={() => query && setOpen(results.length > 0)}
+                onBlur={() => setTimeout(() => setOpen(false), 180)}
+              />
+              {open && (
+                <div className="search-dropdown">
+                  {results.map(r => (
+                    <div key={r.symbol} className="search-item" onMouseDown={() => { pick(r); onToggleSearch() }}>
+                      <span className="search-symbol">{r.symbol}</span>
+                      <span className="search-name">{r.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* 第三排：時間軸 */}
+        {/* 時間軸 */}
         {intervalButtons}
       </div>
     )
