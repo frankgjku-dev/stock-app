@@ -1292,6 +1292,11 @@ export default function Chart({
     S.current.selectedIdx = -1
     S.current.snapPt      = null
     S.current.redraw?.()
+    // 載入線條後強制 fitContent，確保圖表視圖顯示最新 K 棒而非線條位置
+    const { chart } = S.current
+    if (chart) {
+      requestAnimationFrame(() => chart.timeScale().fitContent())
+    }
   }, [drawingsKey])
 
   /* ── 鍵盤快捷鍵 ───────────────────────────────── */
