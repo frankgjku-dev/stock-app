@@ -64,6 +64,8 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
 
   // 篩選條件從 localStorage 還原
   const initF = loadFilters()
+  const [lastViewed, setLastViewed] = useState(null)   // 上次按「看圖」的股票
+
   const [minRS,     setMinRS]     = useState(initF.minRS)
   const [minPassed, setMinPassed] = useState(initF.minPassed)
   const [vcpOnly,   setVcpOnly]   = useState(initF.vcpOnly)
@@ -789,7 +791,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
 
                 return (
                   <React.Fragment key={row.symbol}>
-                    <tr className="data-row">
+                    <tr className={`data-row${lastViewed === row.symbol ? ' row-last-viewed' : ''}`}>
                       {/* ★ */}
                       <td>
                         <button
@@ -939,7 +941,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         </button>
                       </td>
                       <td>
-                        <button className="chart-link-btn" onClick={() => onSelectStock(row.symbol)}>
+                        <button className="chart-link-btn" onClick={() => { setLastViewed(row.symbol); onSelectStock(row.symbol) }}>
                           看圖 →
                         </button>
                       </td>

@@ -751,6 +751,15 @@ body {
 .screener-table tbody tr:last-child td { border-bottom: none; }
 .data-row { transition: background var(--trans); }
 .data-row:hover td { background: var(--surface-2); }
+.row-last-viewed td {
+  background: var(--accent-dim) !important;
+  border-top: 1.5px solid var(--accent);
+  border-bottom: 1.5px solid var(--accent);
+}
+.row-last-viewed .chart-link-btn {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
 .sym { font-weight: 700; color: var(--text-1); }
 
 .rs-badge {
