@@ -64,7 +64,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
 
   // 篩選條件從 localStorage 還原
   const initF = loadFilters()
-  const [lastViewed, setLastViewed] = useState(null)   // 上次按「看圖」的股票
+  const [lastViewed, setLastViewed] = useState(() => localStorage.getItem('tw_screener_last') || null)
 
   const [minRS,     setMinRS]     = useState(initF.minRS)
   const [minPassed, setMinPassed] = useState(initF.minPassed)
@@ -941,7 +941,7 @@ export default function Screener({ onSelectStock, watchlist = { groups:[] }, onT
                         </button>
                       </td>
                       <td>
-                        <button className="chart-link-btn" onClick={() => { setLastViewed(row.symbol); onSelectStock(row.symbol) }}>
+                        <button className="chart-link-btn" onClick={() => { setLastViewed(row.symbol); localStorage.setItem('tw_screener_last', row.symbol); onSelectStock(row.symbol) }}>
                           看圖 →
                         </button>
                       </td>
